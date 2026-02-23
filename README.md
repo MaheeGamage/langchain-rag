@@ -1,4 +1,4 @@
-# test-rag-2
+# Langchain RAG
 
 A retrieval-augmented generation (RAG) system using LangChain, ChromaDB, and Ollama.
 
