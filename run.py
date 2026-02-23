@@ -24,7 +24,7 @@ FASTAPI_CMD = [
 
 STREAMLIT_CMD = [
     sys.executable, "-m", "streamlit",
-    "run", "streamlit_app.py",
+    "run", "ui/streamlit_app.py",
     "--server.port", "8501",
 ]
 

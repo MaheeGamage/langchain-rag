@@ -2,7 +2,7 @@
 package-mode = false
 
 [project]
-name = "test-rag-2"
+name = "langchain-rag"
 version = "0.1.0"
 description = ""
 authors = [
