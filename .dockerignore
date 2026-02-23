@@ -1,0 +1,37 @@
+# Python artefacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Virtual environment — dependencies are installed during image build
+.venv/
+
+# Local data & generated files — mounted as bind volumes at runtime
+chroma_db/
+data/
+ingest.log
+
+# Secrets — never bake into the image; pass via env_file or environment
+.env
+
+# Version control
+.git/
+.gitignore
+
+# Editor & IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Agent logs (dev-only)
+.agent/
+
+# Docs
+docs/
+README.md
+AGENTS.md

@@ -54,11 +54,40 @@ To run either server standalone:
 
 ```bash
 # Streamlit only
-source .venv/bin/activate && streamlit run streamlit_app.py
+source .venv/bin/activate && streamlit run ui/streamlit_app.py
 
 # FastAPI only
 source .venv/bin/activate && uvicorn app.api:app --port 8000 --reload
 ```
+
+### Run with Docker (includes Ollama)
+
+```bash
+# Build and start all services (Ollama + API + UI)
+docker compose up --build
+```
+
+| Service | URL |
+|---|---|
+| Streamlit UI | http://localhost:8501 |
+| FastAPI | http://localhost:8000 |
+| Ollama | http://localhost:11434 |
+
+On first start, `ollama-init` automatically pulls `tinyllama` and `nomic-embed-text`.
+
+Ingest PDFs inside Docker (place files in `./data/` first):
+```bash
+docker compose run --rm api python -m app.ingest
+```
+
+Rebuild from scratch:
+```bash
+docker compose down -v          # removes containers + volumes (re-downloads models)
+docker compose up --build       # rebuilds image and starts all services
+```
+
+> **Note:** `chroma_db/` and `data/` are bind-mounted from the host, so ingested
+> data persists across container restarts and rebuilds.
 
 ## Project Structure
 
@@ -69,9 +98,14 @@ app/
   ├── retriever.py    # Semantic search from ChromaDB
   ├── api.py          # FastAPI endpoints
   └── graph.py        # LangGraph RAG pipeline
-streamlit_app.py      # Streamlit chat UI
-chroma_db/            # Vector database
-data/                 # Input PDFs
+ui/
+  └── streamlit_app.py  # Streamlit chat UI
+run.py                # Starts both servers locally (no Docker)
+Dockerfile            # Two-stage build; shared image for api + ui services
+docker-compose.yml    # Ollama + api + ui services
+.dockerignore         # Excludes .venv/, chroma_db/, data/, .env, etc.
+chroma_db/            # Vector database (bind-mounted at runtime)
+data/                 # Input PDFs (bind-mounted at runtime)
 AGENTS.md             # Guidance for AI agents working in this repo
 .agent/               # Session logs (development notes)
 ```

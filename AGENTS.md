@@ -88,7 +88,7 @@ source .venv/bin/activate && uvicorn app.api:app --port 8000 --reload
 ### Run the Streamlit UI standalone
 
 ```bash
-source .venv/bin/activate && streamlit run streamlit_app.py
+source .venv/bin/activate && streamlit run ui/streamlit_app.py
 # Opens in browser at http://localhost:8501
 ```
 
@@ -98,6 +98,27 @@ source .venv/bin/activate && streamlit run streamlit_app.py
 ollama list           # confirm models are available
 ollama serve          # start if not running (usually auto-started)
 ```
+
+### Run with Docker
+
+```bash
+# Build and start all services (Ollama + API + UI)
+docker compose up --build
+
+# Ingest PDFs inside Docker (place files in ./data/ first)
+docker compose run --rm api python -m app.ingest
+
+# Full rebuild from scratch (re-downloads Ollama models)
+docker compose down -v && docker compose up --build
+```
+
+Image layout:
+- The `api` service builds and tags the shared image as `langchain-rag`.
+- The `ui` service reuses `langchain-rag` via `image: langchain-rag` (no `build:`).
+- `chroma_db/` and `data/` are bind-mounted from the host — never baked into the image.
+- Ollama model weights are stored in the `ollama_data` named volume.
+- `OLLAMA_BASE_URL` is overridden to `http://ollama:11434` inside containers so they
+  resolve the Ollama service by name rather than `localhost`.
 
 ---
 
@@ -112,12 +133,17 @@ app/
   api.py          — FastAPI app exposing POST /query
   __init__.py
 
-streamlit_app.py  — Streamlit UI (chat interface)
-run.py            — Uvicorn entrypoint for the FastAPI server
+ui/
+  streamlit_app.py  — Streamlit UI (chat interface)
+
+run.py            — Starts both servers locally (no Docker)
+Dockerfile        — Two-stage build; produces the shared `langchain-rag` image
+docker-compose.yml — Four services: ollama, ollama-init, api, ui
+.dockerignore     — Excludes .venv/, chroma_db/, data/, .env, etc.
 pyproject.toml    — Dependencies (Poetry / PEP 621 hybrid)
 
-chroma_db/        — Vector database (do not edit manually)
-data/             — Input PDFs (not committed)
+chroma_db/        — Vector database (bind-mounted at runtime; do not edit manually)
+data/             — Input PDFs (bind-mounted at runtime; not committed)
 ingest.log        — Last ingest run log (not committed)
 
 .agent/
@@ -208,7 +234,7 @@ to speed up ingest on machines with more VRAM.
 
 ### Streamlit UI
 
-`streamlit_app.py` imports `graph` directly from `app.graph` — it does **not**
+`ui/streamlit_app.py` imports `graph` directly from `app.graph` — it does **not**
 go through the FastAPI layer. This keeps the UI standalone.
 
 - Chat history is stored in `st.session_state.messages`.
@@ -227,7 +253,7 @@ go through the FastAPI layer. This keeps the UI standalone.
   (the community import is deprecated).
 - **Import from `langchain_text_splitters`**, not `langchain.text_splitter`
   (the old path was removed in LangChain 1.x).
-- Keep `streamlit_app.py` at the repo root, not inside `app/`; it is a
+- Keep `streamlit_app.py` inside `ui/`, not at the repo root; it is a
   presentation layer, not part of the core pipeline.
 - When adding new dependencies, update **both** the `.venv` (via pip/poetry)
   **and** `pyproject.toml`.
@@ -267,3 +293,11 @@ grep -rl "app/graph.py" .agent/sessions/
 - **Don't run `python ingest.py` directly** — run as a module: `python -m app.ingest`.
 - **Don't hard-code model names or provider-specific classes** outside `config.py` / `factory.py`.
 - **Don't add `if PROVIDER == ...` branches outside `factory.py`** — all provider dispatch lives there.
+- **Don't add `build:` to the `ui` service** in `docker-compose.yml` — it reuses the
+  `langchain-rag` image built by `api`. Adding `build:` to `ui` with the same `image:` name
+  causes a conflict ("image already exists" error) because both services would try to tag
+  the same name simultaneously.
+- **Don't bake `chroma_db/` or `data/` into the Docker image** — they are bind-mounted
+  from the host at runtime. The `.dockerignore` excludes them intentionally.
+- **Don't set `OLLAMA_BASE_URL=http://localhost:11434`** inside containers — use
+  `http://ollama:11434` so containers resolve the Ollama service by its Compose service name.

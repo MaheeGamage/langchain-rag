@@ -1,0 +1,114 @@
+# docker-compose.yml
+#
+# Services
+# ─────────
+#   ollama       — Ollama model server  (http://localhost:11434)
+#   ollama-init  — One-shot model puller (runs once then exits)
+#   api          — FastAPI backend       (http://localhost:8000)
+#   ui           — Streamlit chat UI     (http://localhost:8501)
+#
+# Quick start
+# ───────────
+#   docker compose up --build
+#
+# Ingest PDFs (place files in ./data/ first):
+#   docker compose run --rm api python -m app.ingest
+#
+# GPU support (NVIDIA)
+# ─────────────────────
+# Uncomment the `deploy` block in the `ollama` service below.  You also need
+# the NVIDIA Container Toolkit installed on the host:
+#   https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
+
+services:
+
+  # ── Ollama model server ──────────────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list > /dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    # ── Uncomment for NVIDIA GPU support ──────────────────────────────────────
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  # ── One-shot model puller — runs once and exits ──────────────────────────────
+  # Pulls the default Ollama models on first start.
+  # Re-run manually if you change OLLAMA_LLM_MODEL / OLLAMA_EMBEDDING_MODEL:
+  #   docker compose run --rm ollama-init
+  ollama-init:
+    image: ollama/ollama:latest
+    restart: "no"
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    entrypoint: >
+      /bin/sh -c "
+        echo 'Pulling LLM model...' &&
+        ollama pull ${OLLAMA_LLM_MODEL:-tinyllama} &&
+        echo 'Pulling embedding model...' &&
+        ollama pull ${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text} &&
+        echo 'All models ready.'
+      "
+    env_file:
+      - .env
+
+  # ── FastAPI backend ──────────────────────────────────────────────────────────
+  api:
+    build: .
+    image: langchain-rag
+    restart: unless-stopped
+    command: python -m uvicorn app.api:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    volumes: # This volume allows the API container to access the ingested data and chroma DB on the host machine. In cloud deployment, use a shared volume or vector DB service instead.
+      - ./chroma_db:/app/chroma_db
+      - ./data:/app/data
+    env_file:
+      - .env
+    environment:
+      # Override so the container resolves Ollama by service name, not localhost
+      - OLLAMA_BASE_URL=http://ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+  # ── Streamlit UI ─────────────────────────────────────────────────────────────
+  ui:
+    # build: . # Uncomment if you want to build a separate image for the UI (optional). You may need to change image name which differs from api service.
+    image: langchain-rag
+    restart: unless-stopped
+    command: >
+      python -m streamlit run ui/streamlit_app.py
+      --server.port 8501
+      --server.address 0.0.0.0
+      --server.headless true
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+# ── Named volumes ────────────────────────────────────────────────────────────
+volumes:
+  # Ollama model weights — persisted across container restarts
+  ollama_data:
