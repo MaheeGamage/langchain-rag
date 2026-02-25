@@ -8,10 +8,10 @@ This directory stores structured records of agent sessions, prompts, and actions
 
 ```
 .agent/
-├── README.md                        # This file — read before logging
-├── sessions/                        # One file per agent session
-│   └── YYYY-MM-DD_session-NNN.md
-└── prompts/                         # Optional: raw or summarized prompt history
+├── README.md                                       # This file — read before logging
+├── sessions/                                       # One file per agent session
+│   └── YYYY-MM-DD_session-NNN_short-summary.md
+└── prompts/                                        # Optional: raw or summarized prompt history
     └── YYYY-MM-DD_prompts.md
 ```
 
@@ -21,12 +21,13 @@ This directory stores structured records of agent sessions, prompts, and actions
 
 ### 1. Name the file
 
-Use the format: `sessions/YYYY-MM-DD_session-NNN.md`
+Use the format: `sessions/YYYY-MM-DD_session-NNN_short-summary.md`
 
 - `YYYY-MM-DD` — the date the session started
 - `NNN` — a zero-padded sequence number for that day (001, 002, ...)
+- `short-summary` — a kebab-case slug (3-5 words) describing what happened
 
-Example: `sessions/2026-02-20_session-001.md`
+Example: `sessions/2026-02-20_session-001_scaffold-agent-logging.md`
 
 ### 2. Use the session template
 

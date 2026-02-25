@@ -1,11 +1,39 @@
 # streamlit_app.py
 #
-# Entry point for the Streamlit UI.
-# Run with:  streamlit run streamlit_app.py
+# Pure presentation layer — all RAG work happens via the FastAPI backend.
+# Run with:  streamlit run ui/streamlit_app.py
 
+import os
 import streamlit as st
-from app.graph import graph
-from app.config import LLM_MODEL, EMBEDDING_MODEL
+import requests
+
+# ── API base URL ───────────────────────────────────────────────────────────────
+# In Docker: API_URL=http://api:8000  (service-to-service).
+# Locally:   defaults to http://localhost:8000.
+API_URL = os.getenv("API_URL", "http://localhost:8000")
+
+
+# ── API helpers ────────────────────────────────────────────────────────────────
+def _get_config() -> dict:
+    """Fetch model info from the API. Returns empty dict on failure."""
+    try:
+        resp = requests.get(f"{API_URL}/config", timeout=5)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception:
+        return {}
+
+
+def _query_api(question: str) -> dict:
+    """Send a question to the /query endpoint and return the JSON response."""
+    resp = requests.post(
+        f"{API_URL}/query",
+        json={"question": question},
+        timeout=120,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
 
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -15,15 +43,20 @@ st.set_page_config(
 )
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
+api_config = _get_config()
+
 with st.sidebar:
     st.title("RAG Chat")
     st.caption("Ask questions about your ingested documents.")
 
     st.divider()
 
-    st.markdown("**Models**")
-    st.markdown(f"- LLM: `{LLM_MODEL}`")
-    st.markdown(f"- Embeddings: `{EMBEDDING_MODEL}`")
+    if api_config:
+        st.markdown("**Models**")
+        st.markdown(f"- LLM: `{api_config.get('llm_model', '?')}`")
+        st.markdown(f"- Embeddings: `{api_config.get('embedding_model', '?')}`")
+    else:
+        st.warning("API not reachable")
 
     st.divider()
 
@@ -38,18 +71,19 @@ if "messages" not in st.session_state:
 
 
 # ── Helper ─────────────────────────────────────────────────────────────────────
-def _render_sources(docs: list) -> None:
+def _render_sources(sources: list[dict]) -> None:
     """Render retrieved source documents inside an expander."""
-    with st.expander(f"📄 Sources ({len(docs)} chunks)", expanded=False):
-        for i, doc in enumerate(docs, start=1):
-            source = doc.metadata.get("source", "Unknown")
-            page = doc.metadata.get("page")
+    with st.expander(f"📄 Sources ({len(sources)} chunks)", expanded=False):
+        for i, src in enumerate(sources, start=1):
+            meta = src.get("metadata", {})
+            source = meta.get("source", "Unknown")
+            page = meta.get("page")
             label = f"**[{i}]** {source}"
             if page is not None:
                 label += f" — page {int(page) + 1}"
             st.markdown(label)
-            st.caption(doc.page_content[:400])
-            if i < len(docs):
+            st.caption(src.get("content", "")[:400])
+            if i < len(sources):
                 st.divider()
 
 
@@ -73,13 +107,19 @@ if prompt := st.chat_input("Ask a question about your documents…"):
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # 2. Run the RAG graph and display the answer
+    # 2. Call the API and display the answer
     with st.chat_message("assistant"):
         with st.spinner("Retrieving and generating…"):
-            result = graph.invoke({"question": prompt})
-
-        answer = result.get("answer", "No answer returned.")
-        sources = result.get("documents", [])
+            try:
+                result = _query_api(prompt)
+                answer = result.get("answer", "No answer returned.")
+                sources = result.get("sources", [])
+            except requests.exceptions.ConnectionError:
+                answer = "⚠️ Could not connect to the API. Is the server running?"
+                sources = []
+            except Exception as e:
+                answer = f"⚠️ API error: {e}"
+                sources = []
 
         st.markdown(answer)
         if sources:

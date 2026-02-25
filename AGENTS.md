@@ -234,9 +234,13 @@ to speed up ingest on machines with more VRAM.
 
 ### Streamlit UI
 
-`ui/streamlit_app.py` imports `graph` directly from `app.graph` — it does **not**
-go through the FastAPI layer. This keeps the UI standalone.
+`ui/streamlit_app.py` is a **pure presentation layer** — it does **not** import
+`app.graph` or any backend modules. All RAG work (retrieval, generation) happens
+via HTTP calls to the FastAPI `/query` endpoint.
 
+- `API_URL` env var controls the backend address (default: `http://localhost:8000`,
+  overridden to `http://api:8000` in Docker).
+- Model info is fetched from `GET /config` for display in the sidebar.
 - Chat history is stored in `st.session_state.messages`.
 - Each message dict: `{"role": "user"|"assistant", "content": str, "sources": list}`.
 - Source documents are shown in a collapsible expander below each answer.
@@ -265,9 +269,10 @@ go through the FastAPI layer. This keeps the UI standalone.
 All sessions **must** be logged. See [`.agent/README.md`](.agent/README.md) for
 the full convention. Summary:
 
-1. **Create a session file** at `.agent/sessions/YYYY-MM-DD_session-NNN.md`
-   before (or immediately after) starting work.
-2. Use the template sections: Goal, Prompts Summary, Actions Taken, Outcome, Agent.
+1. **Create a session file** at `.agent/sessions/YYYY-MM-DD_session-NNN_short-summary.md`
+   before (or immediately after) starting work.  The `short-summary` is a
+   kebab-case slug (3-5 words) so the purpose is visible in a directory listing.
+2. Use the template sections:  Goal, Prompts Summary, Actions Taken, Outcome, Agent.
 3. Be specific in **Actions Taken** — list every file created/edited and every
    command run.
 4. Log the session in the same commit as the code changes it describes.
@@ -293,6 +298,8 @@ grep -rl "app/graph.py" .agent/sessions/
 - **Don't run `python ingest.py` directly** — run as a module: `python -m app.ingest`.
 - **Don't hard-code model names or provider-specific classes** outside `config.py` / `factory.py`.
 - **Don't add `if PROVIDER == ...` branches outside `factory.py`** — all provider dispatch lives there.
+- **Don't import `app.graph` or backend modules in `streamlit_app.py`** — the UI
+  must remain a pure HTTP client. All RAG logic goes through the FastAPI API.
 - **Don't add `build:` to the `ui` service** in `docker-compose.yml` — it reuses the
   `langchain-rag` image built by `api`. Adding `build:` to `ui` with the same `image:` name
   causes a conflict ("image already exists" error) because both services would try to tag

@@ -103,10 +103,10 @@ services:
     env_file:
       - .env
     environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
+      # UI talks to the API container, not directly to Ollama or ChromaDB
+      - API_URL=http://api:8000
     depends_on:
-      ollama:
-        condition: service_healthy
+      - api
 
 # ── Named volumes ────────────────────────────────────────────────────────────
 volumes:
