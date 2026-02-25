@@ -1,5 +1,7 @@
 # app/api.py
 
+import json
+from typing import Any
 from fastapi import FastAPI
 from pydantic import BaseModel
 from .graph import graph
@@ -10,6 +12,7 @@ app = FastAPI()
 
 class QueryRequest(BaseModel):
     question: str
+    context: Any = None # Accept either a string or a structured object as context
 
 
 class SourceChunk(BaseModel):
@@ -39,7 +42,15 @@ async def config():
 
 @app.post("/query", response_model=QueryResponse)
 async def query(req: QueryRequest):
-    result = graph.invoke({"question": req.question})
+    # Convert context to string if it is a structured object
+    ctx = req.context
+    if ctx is None:
+        context_str = ""
+    elif isinstance(ctx, str):
+        context_str = ctx
+    else:
+        context_str = json.dumps(ctx, indent=2)
+    result = graph.invoke({"question": req.question, "context": context_str})
     sources = [
         SourceChunk(content=doc.page_content, metadata=doc.metadata)
         for doc in result.get("documents", [])

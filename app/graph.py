@@ -20,6 +20,7 @@ log = logging.getLogger(__name__)
 
 class RAGState(TypedDict):
     question: str
+    context: str
     documents: List[Document]
     answer: str
 
@@ -36,13 +37,16 @@ def retrieve(state: RAGState):
 
 
 def generate(state: RAGState):
-    context = "\n\n".join(doc.page_content for doc in state["documents"])
+    rag_context = "\n\n".join(doc.page_content for doc in state["documents"])
+    user_context = state.get("context", "")
+
+    user_context_section = f"\nUser-provided context:\n{user_context}\n" if user_context else ""
 
     prompt = f"""
-Answer only using the context below.
-
-Context:
-{context}
+Answer using the context below.
+{user_context_section}
+Retrieved context:
+{rag_context}
 
 Question:
 {state["question"]}

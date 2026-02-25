@@ -1,0 +1,6 @@
+# API HTTP Requests
+# Use REST Client extension in VSCode to send these requests
+# https://marketplace.visualstudio.com/items?itemName=humao.rest-client
+
+GET http://localhost:8000/config
+Accept: application/json
