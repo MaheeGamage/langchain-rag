@@ -5,7 +5,13 @@ from fastapi import FastAPI
 from langchain_core.messages import HumanMessage, AIMessage
 from .graph import graph
 from .models import ContextEntry
-from .config import LLM_MODEL, EMBEDDING_MODEL, LLM_PROVIDER, EMBEDDING_PROVIDER
+from .config import (
+    CHROMA_TARGET,
+    EMBEDDING_MODEL,
+    EMBEDDING_PROVIDER,
+    LLM_MODEL,
+    LLM_PROVIDER,
+)
 
 _TAGS = [
     {
@@ -73,6 +79,7 @@ async def config():
         "embedding_model": EMBEDDING_MODEL,
         "llm_provider": LLM_PROVIDER,
         "embedding_provider": EMBEDDING_PROVIDER,
+        "chroma_target": CHROMA_TARGET,
     }
 
 

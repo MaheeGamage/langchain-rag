@@ -7,6 +7,23 @@ load_dotenv()
 
 _VALID_PROVIDERS = ("ollama", "openai", "gemini")
 
+
+def _parse_bool(name: str, default: str = "false") -> bool:
+    raw = os.getenv(name, default).strip().lower()
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"Invalid {name}={raw!r}. Use true/false.")
+
+
+def _parse_int(name: str, default: str) -> int:
+    raw = os.getenv(name, default).strip()
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ValueError(f"Invalid {name}={raw!r}. Use an integer.") from exc
+
 # ── Independent provider switches ─────────────────────────────────────────────
 # Set these in .env.  They are fully independent — mix any combination.
 # LLM_PROVIDER       controls which service answers questions.
@@ -17,6 +34,13 @@ EMBEDDING_PROVIDER: str = os.getenv("EMBEDDING_PROVIDER", "ollama")
 for _p, _name in ((LLM_PROVIDER, "LLM_PROVIDER"), (EMBEDDING_PROVIDER, "EMBEDDING_PROVIDER")):
     if _p not in _VALID_PROVIDERS:
         raise ValueError(f"Unknown {_name}={_p!r}. Choose from: {list(_VALID_PROVIDERS)}")
+
+# ── Chroma HTTP connection ───────────────────────────────────────────────────
+# Defaults target a local-development host process (API runs on host, Chroma in Docker).
+# Docker compose overrides these for container-to-container networking.
+CHROMA_HOST: str = os.getenv("CHROMA_HOST", "localhost").strip()
+CHROMA_PORT: int = _parse_int("CHROMA_PORT", "8001")
+CHROMA_SSL: bool = _parse_bool("CHROMA_SSL", "false")
 
 # ── LLM defaults — keyed by LLM_PROVIDER ─────────────────────────────────────
 _LLM_DEFAULTS: dict = {
@@ -76,5 +100,7 @@ COLLECTION_NAME: str = (
 )
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-CHROMA_PATH: str = "./chroma_db"
-DATA_PATH:   str = "./data"
+DATA_PATH: str = "./data"
+
+scheme = "https" if CHROMA_SSL else "http"
+CHROMA_TARGET: str = f"{scheme}://{CHROMA_HOST}:{CHROMA_PORT}"

@@ -22,6 +22,23 @@ A retrieval-augmented generation (RAG) system using LangChain, ChromaDB, and Oll
 
 ## Usage
 
+### ChromaDB Connection
+
+The app connects to ChromaDB over HTTP only, and this repository configures it
+through `docker-compose.yml` (`chroma` service at `chroma:8000` inside the network).
+
+For local development (API + ingest on host, Chroma in Docker), use:
+```bash
+CHROMA_HOST=localhost
+CHROMA_PORT=8001
+CHROMA_SSL=false
+```
+
+When switching Chroma instances, re-ingest your documents:
+```bash
+poetry run python -m app.ingest
+```
+
 ### Ingest PDFs into ChromaDB
 
 ```bash
@@ -60,10 +77,10 @@ source .venv/bin/activate && streamlit run ui/streamlit_app.py
 source .venv/bin/activate && uvicorn app.api:app --port 8000 --reload
 ```
 
-### Run with Docker (includes Ollama)
+### Run with Docker (includes Ollama + ChromaDB)
 
 ```bash
-# Build and start all services (Ollama + API + UI)
+# Build and start all services (Ollama + ChromaDB + API + UI)
 docker compose up --build
 ```
 
@@ -72,6 +89,7 @@ docker compose up --build
 | Streamlit UI | http://localhost:8501 |
 | FastAPI | http://localhost:8000 |
 | Ollama | http://localhost:11434 |
+| ChromaDB | http://localhost:8001 |
 
 On first start, `ollama-init` automatically pulls `tinyllama` and `nomic-embed-text`.
 
@@ -86,14 +104,15 @@ docker compose down -v          # removes containers + volumes (re-downloads mod
 docker compose up --build       # rebuilds image and starts all services
 ```
 
-> **Note:** `chroma_db/` and `data/` are bind-mounted from the host, so ingested
-> data persists across container restarts and rebuilds.
+> **Note:** in Docker, vectors persist in the `chroma_data` named volume. `data/`
+> is bind-mounted from the host so PDFs stay local.
 
 ## Project Structure
 
 ```
 app/
   ├── config.py       # Model & path config
+  ├── vectorstore.py  # Chroma client + LangChain vectorstore builder
   ├── ingest.py       # PDF → chunks → embeddings
   ├── retriever.py    # Semantic search from ChromaDB
   ├── api.py          # FastAPI endpoints
@@ -102,9 +121,8 @@ ui/
   └── streamlit_app.py  # Streamlit chat UI
 run.py                # Starts both servers locally (no Docker)
 Dockerfile            # Two-stage build; shared image for api + ui services
-docker-compose.yml    # Ollama + api + ui services
+docker-compose.yml    # Ollama + ChromaDB + api + ui services
 .dockerignore         # Excludes .venv/, chroma_db/, data/, .env, etc.
-chroma_db/            # Vector database (bind-mounted at runtime)
 data/                 # Input PDFs (bind-mounted at runtime)
 AGENTS.md             # Guidance for AI agents working in this repo
 .agent/               # Session logs (development notes)

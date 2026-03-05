@@ -4,6 +4,7 @@
 # ─────────
 #   ollama       — Ollama model server  (http://localhost:11434)
 #   ollama-init  — One-shot model puller (runs once then exits)
+#   chroma       — ChromaDB server       (http://localhost:8001)
 #   api          — FastAPI backend       (http://localhost:8000)
 #   ui           — Streamlit chat UI     (http://localhost:8501)
 #
@@ -68,6 +69,15 @@ services:
     env_file:
       - .env
 
+  # ── ChromaDB server (remote vector store) ─────────────────────────────────
+  chroma:
+    image: chromadb/chroma:latest
+    restart: unless-stopped
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+
   # ── FastAPI backend ──────────────────────────────────────────────────────────
   api:
     build: .
@@ -76,17 +86,21 @@ services:
     command: python -m uvicorn app.api:app --host 0.0.0.0 --port 8000
     ports:
       - "8000:8000"
-    volumes: # This volume allows the API container to access the ingested data and chroma DB on the host machine. In cloud deployment, use a shared volume or vector DB service instead.
-      - ./chroma_db:/app/chroma_db
+    volumes: # Keep only source data bind-mount; vectors are stored in chroma service.
       - ./data:/app/data
     env_file:
       - .env
     environment:
       # Override so the container resolves Ollama by service name, not localhost
       - OLLAMA_BASE_URL=http://ollama:11434
+      - CHROMA_HOST=chroma
+      - CHROMA_PORT=8000
+      - CHROMA_SSL=false
     depends_on:
       ollama:
         condition: service_healthy
+      chroma:
+        condition: service_started
 
   # ── Streamlit UI ─────────────────────────────────────────────────────────────
   ui:
@@ -112,3 +126,5 @@ services:
 volumes:
   # Ollama model weights — persisted across container restarts
   ollama_data:
+  # Chroma vector data for remote DB mode
+  chroma_data:

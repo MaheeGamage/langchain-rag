@@ -2,13 +2,18 @@
 
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_chroma import Chroma
 from tqdm import tqdm
 import os
 import logging
 import time
-from .config import EMBEDDING_MODEL, CHROMA_PATH, DATA_PATH, COLLECTION_NAME, EMBEDDING_PROVIDER
-from .factory import get_embeddings
+from .config import (
+    CHROMA_TARGET,
+    COLLECTION_NAME,
+    DATA_PATH,
+    EMBEDDING_MODEL,
+    EMBEDDING_PROVIDER,
+)
+from .vectorstore import get_vectorstore
 
 BATCH_SIZE = 25  # chunks per embedding call
 LOG_FILE = "ingest.log"
@@ -55,15 +60,16 @@ def ingest():
 
     # ── 3. Embed & store in batches ──────────────────────────────────────────
     print("[3/4] Embedding chunks (this is the slow part) ...")
-    log.info(f"Starting embedding: provider={EMBEDDING_PROVIDER!r} model={EMBEDDING_MODEL!r} collection={COLLECTION_NAME!r}")
-    print(f"    Provider: {EMBEDDING_PROVIDER} | Model: {EMBEDDING_MODEL} | Collection: {COLLECTION_NAME}")
-
-    embeddings = get_embeddings()
-    vectorstore = Chroma(
-        embedding_function=embeddings,
-        persist_directory=CHROMA_PATH,
-        collection_name=COLLECTION_NAME,
+    log.info(
+        f"Starting embedding: provider={EMBEDDING_PROVIDER!r} model={EMBEDDING_MODEL!r} "
+        f"collection={COLLECTION_NAME!r} chroma_target={CHROMA_TARGET!r}"
     )
+    print(
+        f"    Provider: {EMBEDDING_PROVIDER} | Model: {EMBEDDING_MODEL} | "
+        f"Collection: {COLLECTION_NAME} | Chroma: {CHROMA_TARGET}"
+    )
+
+    vectorstore = get_vectorstore()
 
     batches = [chunks[i : i + BATCH_SIZE] for i in range(0, len(chunks), BATCH_SIZE)]
     total_batches = len(batches)
@@ -100,4 +106,3 @@ def ingest():
 
 if __name__ == "__main__":
     ingest()
-

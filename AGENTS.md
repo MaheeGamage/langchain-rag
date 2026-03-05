@@ -65,7 +65,7 @@ source .venv/bin/activate && python -m app.ingest
 
 - Place PDFs in `./data/` before running.
 - Logs go to `ingest.log` (auto-created). Tail with `tail -f ingest.log`.
-- Embeddings are written to `./chroma_db/` (auto-persisted, no `.persist()` call needed).
+- Embeddings are written to ChromaDB over HTTP (`CHROMA_HOST:CHROMA_PORT`).
 
 ### Run both servers (recommended)
 
@@ -102,7 +102,7 @@ ollama serve          # start if not running (usually auto-started)
 ### Run with Docker
 
 ```bash
-# Build and start all services (Ollama + API + UI)
+# Build and start all services (Ollama + ChromaDB + API + UI)
 docker compose up --build
 
 # Ingest PDFs inside Docker (place files in ./data/ first)
@@ -115,10 +115,13 @@ docker compose down -v && docker compose up --build
 Image layout:
 - The `api` service builds and tags the shared image as `langchain-rag`.
 - The `ui` service reuses `langchain-rag` via `image: langchain-rag` (no `build:`).
-- `chroma_db/` and `data/` are bind-mounted from the host — never baked into the image.
+- Chroma vectors are stored in the `chroma_data` named volume (via the `chroma` service).
+- `data/` is bind-mounted from the host — never baked into the image.
 - Ollama model weights are stored in the `ollama_data` named volume.
 - `OLLAMA_BASE_URL` is overridden to `http://ollama:11434` inside containers so they
   resolve the Ollama service by name rather than `localhost`.
+- Chroma env vars are overridden to `CHROMA_HOST=chroma`, `CHROMA_PORT=8000`
+  inside containers so the API resolves the Chroma service by name.
 
 ---
 
@@ -127,6 +130,7 @@ Image layout:
 ```
 app/
   config.py       — Central config: model names, paths. Change models here.
+  vectorstore.py  — Builds Chroma HTTP vectorstore client
   ingest.py       — PDF → chunks → embeddings → ChromaDB
   retriever.py    — Wraps ChromaDB as a LangChain retriever
   graph.py        — LangGraph pipeline: retrieve → generate
@@ -138,11 +142,10 @@ ui/
 
 run.py            — Starts both servers locally (no Docker)
 Dockerfile        — Two-stage build; produces the shared `langchain-rag` image
-docker-compose.yml — Four services: ollama, ollama-init, api, ui
+docker-compose.yml — Five services: ollama, ollama-init, chroma, api, ui
 .dockerignore     — Excludes .venv/, chroma_db/, data/, .env, etc.
 pyproject.toml    — Dependencies (Poetry / PEP 621 hybrid)
 
-chroma_db/        — Vector database (bind-mounted at runtime; do not edit manually)
 data/             — Input PDFs (bind-mounted at runtime; not committed)
 ingest.log        — Last ingest run log (not committed)
 
@@ -169,6 +172,9 @@ EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "ollama")  # ollama | opena
 LLM_MODEL,    LLM_API_KEY,    LLM_BASE_URL       = ...  # from _LLM_DEFAULTS[LLM_PROVIDER]
 EMBEDDING_MODEL, EMBEDDING_API_KEY, EMBEDDING_BASE_URL = ...  # from _EMBEDDING_DEFAULTS[EMBEDDING_PROVIDER]
 COLLECTION_NAME = ...  # derived from EMBEDDING_MODEL — keeps collections separate
+CHROMA_HOST = ...      # default localhost for host-run API/ingest in development
+CHROMA_PORT = ...      # default 8001 (published Chroma port)
+CHROMA_TARGET = ...    # http(s)://host:port
 ```
 
 To switch providers, set `LLM_PROVIDER` and/or `EMBEDDING_PROVIDER` in `.env`
@@ -178,6 +184,7 @@ To override a specific model within a provider, set e.g. `OLLAMA_LLM_MODEL=llama
 > **Note:** each embedding model gets its own ChromaDB collection (`COLLECTION_NAME`).
 > Switching `EMBEDDING_PROVIDER` requires a re-ingest. Switching only `LLM_PROVIDER`
 > does **not** require re-ingest.
+> Switching Chroma instances requires a re-ingest to populate the target backend.
 
 ### Provider / LLM factory
 
@@ -249,7 +256,7 @@ via HTTP calls to the FastAPI `/query` endpoint.
 
 ## 5. Code Style & Structure Rules
 
-- **One concern per file.** `graph.py` = graph only; `retriever.py` = retriever only, etc.
+- **One concern per file.** `graph.py` = graph only; `retriever.py` = retriever only; `vectorstore.py` = Chroma client construction only.
 - **No hard-coded strings** for model names or paths — always import from `config.py`.
 - **Never import provider-specific LLM/embedding classes outside `factory.py`** — use `get_llm()` / `get_embeddings()` instead.
 - **No `vectorstore.persist()`** — Chroma ≥ 0.4 auto-persists on write.
@@ -298,13 +305,17 @@ grep -rl "app/graph.py" .agent/sessions/
 - **Don't run `python ingest.py` directly** — run as a module: `python -m app.ingest`.
 - **Don't hard-code model names or provider-specific classes** outside `config.py` / `factory.py`.
 - **Don't add `if PROVIDER == ...` branches outside `factory.py`** — all provider dispatch lives there.
+- **Don't spread Chroma connection logic across files** — keep Chroma client construction centralized in `app/vectorstore.py`.
 - **Don't import `app.graph` or backend modules in `streamlit_app.py`** — the UI
   must remain a pure HTTP client. All RAG logic goes through the FastAPI API.
 - **Don't add `build:` to the `ui` service** in `docker-compose.yml` — it reuses the
   `langchain-rag` image built by `api`. Adding `build:` to `ui` with the same `image:` name
   causes a conflict ("image already exists" error) because both services would try to tag
   the same name simultaneously.
-- **Don't bake `chroma_db/` or `data/` into the Docker image** — they are bind-mounted
-  from the host at runtime. The `.dockerignore` excludes them intentionally.
+- **Don't bake `chroma_db/` or `data/` into the Docker image** — vectors live in the
+  `chroma_data` named volume and `data/` remains bind-mounted from the host.
+  The `.dockerignore` excludes these paths.
 - **Don't set `OLLAMA_BASE_URL=http://localhost:11434`** inside containers — use
   `http://ollama:11434` so containers resolve the Ollama service by its Compose service name.
+- **Don't set `CHROMA_HOST=localhost` inside containers** — use
+  `CHROMA_HOST=chroma` so containers resolve the Chroma service by its Compose service name.
