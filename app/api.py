@@ -1,67 +1,13 @@
 # app/api.py
 
+from app.schemas import QueryRequest, QueryResponse, SourceChunk
 from fastapi import FastAPI
-from pydantic import BaseModel
 from langchain_core.messages import HumanMessage, AIMessage
 from .graph import graph
 from .models import ContextEntry
 from .config import LLM_MODEL, EMBEDDING_MODEL, LLM_PROVIDER, EMBEDDING_PROVIDER
 
 app = FastAPI()
-
-
-# ---------------------------------------------------------------------------
-# Request models
-# ---------------------------------------------------------------------------
-
-class ConversationTurn(BaseModel):
-    role: str  # "user" | "assistant"
-    content: str
-
-
-class Conversation(BaseModel):
-    id: str | None = None
-    history: list[ConversationTurn] = []
-
-
-class ContextPayload(BaseModel):
-    entries: list[ContextEntry] = []
-
-
-class QueryOptions(BaseModel):
-    model: str | None = None
-    stream: bool = False
-    maxTokens: int | None = None
-    temperature: float | None = None
-
-
-class QueryMeta(BaseModel):
-    clientId: str | None = None
-    workspaceId: str | None = None
-    userId: str | None = None
-
-
-class QueryRequest(BaseModel):
-    message: str
-    conversation: Conversation | None = None
-    context: ContextPayload | None = None
-    options: QueryOptions | None = None
-    meta: QueryMeta | None = None
-
-
-# ---------------------------------------------------------------------------
-# Response models
-# ---------------------------------------------------------------------------
-
-class SourceChunk(BaseModel):
-    content: str
-    metadata: dict
-
-
-class QueryResponse(BaseModel):
-    answer: str
-    sources: list[SourceChunk]
-
 
 # ---------------------------------------------------------------------------
 # Routes
