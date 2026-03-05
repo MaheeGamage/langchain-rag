@@ -24,11 +24,31 @@ def _get_config() -> dict:
         return {}
 
 
-def _query_api(question: str) -> dict:
-    """Send a question to the /query endpoint and return the JSON response."""
+def _query_api(question: str, history: list[dict] | None = None) -> dict:
+    """Send a question to the /query endpoint and return the JSON response.
+
+    ``history`` is a list of previous ``{"role": ..., "content": ...}`` dicts
+    from ``st.session_state.messages`` (excluding the current user message).
+    """
+    conversation_history = [
+        {"role": msg["role"], "content": msg["content"]}
+        for msg in (history or [])
+    ]
+    payload = {
+        "message": question,
+        "conversation": {
+            "history": conversation_history,
+        },
+        "context": {
+            "entries": [],
+        },
+        "meta": {
+            "clientId": "streamlit",
+        },
+    }
     resp = requests.post(
         f"{API_URL}/query",
-        json={"question": question},
+        json=payload,
         timeout=120,
     )
     resp.raise_for_status()
@@ -111,7 +131,9 @@ if prompt := st.chat_input("Ask a question about your documents…"):
     with st.chat_message("assistant"):
         with st.spinner("Retrieving and generating…"):
             try:
-                result = _query_api(prompt)
+                # Pass all messages except the one just appended (the current user turn)
+                history = st.session_state.messages[:-1]
+                result = _query_api(prompt, history=history)
                 answer = result.get("answer", "No answer returned.")
                 sources = result.get("sources", [])
             except requests.exceptions.ConnectionError:

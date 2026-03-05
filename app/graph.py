@@ -2,13 +2,18 @@
 
 import logging
 import time
-from typing import TypedDict, List
+from typing import Annotated, TypedDict, List
+
+from click import prompt
 from langchain_core.documents import Document
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langchain_core.output_parsers import StrOutputParser
 from langgraph.graph import StateGraph, END
+from langgraph.graph.message import add_messages
 from .retriever import get_retriever
 from .config import LLM_PROVIDER, LLM_MODEL
 from .factory import get_llm
+from .models import ContextEntry
 
 logging.basicConfig(
     level=logging.INFO,
@@ -19,10 +24,12 @@ log = logging.getLogger(__name__)
 
 
 class RAGState(TypedDict):
-    question: str
-    context: str
-    documents: List[Document]
-    answer: str
+    # --- from API request ---
+    messages:  Annotated[list[BaseMessage], add_messages]  # full conversation (history + latest turn). Currently client store conversation history  
+    context:   list[ContextEntry]                          # entries forwarded from the API request
+
+    # --- internal graph state ---
+    retrieved: list[ContextEntry]                          # chunks fetched by the retriever
 
 
 retriever = get_retriever()
@@ -31,39 +38,81 @@ llm = get_llm() | StrOutputParser()
 
 
 def retrieve(state: RAGState):
+    # Use the latest HumanMessage as the retrieval query
+    query = next(
+        (m.content for m in reversed(state["messages"]) if isinstance(m, HumanMessage)),
+        "",
+    )
     t = time.perf_counter()
-    docs = retriever.invoke(state["question"])
-    return {"documents": docs}
+    docs = retriever.invoke(query)
+    log.info("Retrieved %d chunks in %.2fs", len(docs), time.perf_counter() - t)
+    retrieved = [
+        ContextEntry(
+            type="snippet",
+            name=doc.metadata.get("source"),
+            content=doc.page_content,
+            source="retriever",
+            score=doc.metadata.get("score"),
+        )
+        for doc in docs
+    ]
+    return {"retrieved": retrieved}
+
+def build_generate_prompt(state: RAGState) -> str:
+    # Latest user query
+    query = next(
+        (m.content for m in reversed(state["messages"]) if isinstance(m, HumanMessage)),
+        "",
+    )
+
+    # Retrieved chunks → string block
+    rag_context = "\n\n".join(
+        e.content for e in state.get("retrieved", []) if e.content
+    )
+
+    # User-provided context entries → string block
+    user_context_parts = []
+    for entry in state.get("context", []):
+        header = f"[{entry.type}]"
+        if entry.name:
+            header += f" {entry.name}"
+        if entry.mimeType:
+            header += f" ({entry.mimeType})"
+        if entry.score is not None:
+            header += f" score={entry.score:.2f}"
+        if entry.content:
+            user_context_parts.append(f"{header}\n{entry.content}")
+    user_context = "\n\n".join(user_context_parts)
+
+    BASE_PROMPT = """
+    You are an AI assistant for an experiment tracking system built around MLflow,
+    repurposed to track experiments in quantum software development.
+
+    Your role is to help users understand how to use experiment tracking concepts
+    and how to apply them using mlflow by using it's sdks in quantum software experiments.
+
+    Provide clear, concise answers based on the context provided. But don't mention 
+    this to the user when you answer. If the context doesn't contain the information 
+    needed to answer the question, say you don't know.
+    """
+    
+    sections = [BASE_PROMPT]
+    if user_context:
+        sections.append(f"User-provided context:\n{user_context}")
+    if rag_context:
+        sections.append(f"Retrieved context:\n{rag_context}")
+    sections.append(f"Query:\n{query}")
+
+    prompt = "\n\n".join(sections)
+    return prompt
 
 
 def generate(state: RAGState):
-    rag_context = "\n\n".join(doc.page_content for doc in state["documents"])
-    user_context = state.get("context", "")
-
-    user_context_section = f"\nUser-provided context:\n{user_context}\n" if user_context else ""
-
-    prompt = f"""
-Answer using the context below.
-{user_context_section}
-Retrieved context:
-{rag_context}
-
-Question:
-{state["question"]}
-"""
+    prompt = build_generate_prompt(state)
     t = time.perf_counter()
     answer = llm.invoke(prompt)
-    return {"answer": answer}
-
-
-def generate_without_retrieval(state: RAGState):
-    prompt = f"""Answer the question below.
-    Question: 
-    {state["question"]}
-    """
-    t = time.perf_counter()
-    answer = llm.invoke(prompt)
-    return {"answer": answer}
+    log.info("Generated answer in %.2fs", time.perf_counter() - t)
+    return {"messages": [AIMessage(content=answer)]}
 
 def build_graph():
 
@@ -71,14 +120,10 @@ def build_graph():
 
     builder.add_node("retrieve", retrieve)
     builder.add_node("generate", generate)
-    builder.add_node("generate_without_retrieval", generate_without_retrieval)  
 
     builder.set_entry_point("retrieve")
     builder.add_edge("retrieve", "generate")
     builder.add_edge("generate", END)
-
-    # builder.set_entry_point("generate_without_retrieval")
-    # builder.add_edge("generate_without_retrieval", END)
 
     return builder.compile()
 
