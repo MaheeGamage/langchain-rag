@@ -104,3 +104,14 @@ DATA_PATH: str = "./data"
 
 scheme = "https" if CHROMA_SSL else "http"
 CHROMA_TARGET: str = f"{scheme}://{CHROMA_HOST}:{CHROMA_PORT}"
+
+# ── Chunking ──────────────────────────────────────────────────────────────────
+# ~500 tokens at ~4 chars/token with ~50-token overlap — standard middle ground.
+# Finer → more precise retrieval but loses surrounding context.
+# Coarser → richer context but lower retrieval precision.
+CHUNK_SIZE:    int = 2000
+CHUNK_OVERLAP: int = 200
+
+# ── Ingestion ─────────────────────────────────────────────────────────────────
+BATCH_SIZE: int = 25   # chunks per Chroma add_documents call
+DATA_ROOT:   str = os.getenv("DATA_ROOT",   "./refined-content") # Ingestion data path

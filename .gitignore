@@ -5,3 +5,4 @@ chroma_db/
 data/
 ingest.log
 *.pyc
+.log
