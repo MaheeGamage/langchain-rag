@@ -76,7 +76,7 @@ services:
     ports:
       - "8001:8000"
     volumes:
-      - chroma_data:/chroma/chroma
+      - chroma_data:/data
 
   # ── FastAPI backend ──────────────────────────────────────────────────────────
   api:
@@ -96,6 +96,7 @@ services:
       - CHROMA_HOST=chroma
       - CHROMA_PORT=8000
       - CHROMA_SSL=false
+      - CONVERSATIONS_DB=./conversations.db
     depends_on:
       ollama:
         condition: service_healthy

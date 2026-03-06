@@ -101,7 +101,7 @@ COLLECTION_NAME: str = (
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 DATA_PATH: str = "./data"
-CONVERSATIONS_DB: str = os.getenv("CONVERSATIONS_DB", "./local_db/conversations.db")
+CONVERSATIONS_DB: str = os.getenv("CONVERSATIONS_DB", "./conversations.db")
 
 scheme = "https" if CHROMA_SSL else "http"
 CHROMA_TARGET: str = f"{scheme}://{CHROMA_HOST}:{CHROMA_PORT}"
