@@ -24,20 +24,17 @@ def _get_config() -> dict:
         return {}
 
 
-def _query_api(question: str, history: list[dict] | None = None) -> dict:
+def _query_api(question: str, thread_id: str | None = None) -> dict:
     """Send a question to the /query endpoint and return the JSON response.
 
-    ``history`` is a list of previous ``{"role": ..., "content": ...}`` dicts
-    from ``st.session_state.messages`` (excluding the current user message).
+    ``thread_id`` is passed to the API so the server-side checkpointer can
+    retrieve and persist history. Omit on the first turn — the API will
+    generate and return a new thread_id.
     """
-    conversation_history = [
-        {"role": msg["role"], "content": msg["content"]}
-        for msg in (history or [])
-    ]
     payload = {
         "message": question,
         "conversation": {
-            "history": conversation_history,
+            "id": thread_id,
         },
         "context": {
             "entries": [],
@@ -82,12 +79,15 @@ with st.sidebar:
 
     if st.button("Clear chat history", use_container_width=True):
         st.session_state.messages = []
+        st.session_state.thread_id = None
         st.rerun()
 
 # ── Session state ──────────────────────────────────────────────────────────────
 # Each message: {"role": "user"|"assistant", "content": str, "sources": list}
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "thread_id" not in st.session_state:
+    st.session_state.thread_id = None
 
 
 # ── Helper ─────────────────────────────────────────────────────────────────────
@@ -131,11 +131,10 @@ if prompt := st.chat_input("Ask a question about your documents…"):
     with st.chat_message("assistant"):
         with st.spinner("Retrieving and generating…"):
             try:
-                # Pass all messages except the one just appended (the current user turn)
-                history = st.session_state.messages[:-1]
-                result = _query_api(prompt, history=history)
+                result = _query_api(prompt, thread_id=st.session_state.thread_id)
                 answer = result.get("answer", "No answer returned.")
                 sources = result.get("sources", [])
+                st.session_state.thread_id = result.get("thread_id", st.session_state.thread_id)
             except requests.exceptions.ConnectionError:
                 answer = "⚠️ Could not connect to the API. Is the server running?"
                 sources = []

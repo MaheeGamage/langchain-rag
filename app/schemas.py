@@ -137,6 +137,7 @@ class SourceChunk(BaseModel):
 class QueryResponse(BaseModel):
     """Response body from `POST /query`."""
 
+    thread_id: str | None = Field(None, description="Conversation thread identifier. Pass this back on subsequent turns to continue the conversation.")
     answer: str = Field(..., description="LLM-generated answer grounded in the retrieved chunks.")
     sources: list[SourceChunk] = Field(
         ...,

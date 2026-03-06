@@ -3,6 +3,7 @@
 from app.schemas import QueryRequest, QueryResponse, SourceChunk
 from fastapi import FastAPI
 from langchain_core.messages import HumanMessage, AIMessage
+import uuid
 from .graph import graph
 from .models import ContextEntry
 from .config import (
@@ -99,23 +100,17 @@ async def config():
     response_description="Generated answer and supporting source chunks.",
 )
 async def query(req: QueryRequest):
-    # Build LangChain messages from conversation history + current message
-    messages = []
-    if req.conversation and req.conversation.history:
-        for turn in req.conversation.history:
-            if turn.role == "user":
-                messages.append(HumanMessage(content=turn.content))
-            else:
-                messages.append(AIMessage(content=turn.content))
-    messages.append(HumanMessage(content=req.message))
+    thread_id = req.conversation.id if req.conversation and req.conversation.id else str(uuid.uuid4())
+
+    messages = [HumanMessage(content=req.message)]
+    config = {"configurable": {"thread_id": thread_id}}
 
     context_entries = req.context.entries if req.context else []
 
-    result = graph.invoke({
-        "messages": messages,
-        "context": context_entries,
-        "retrieved": [],
-    })
+    result = graph.invoke(
+        {"messages": messages, "context": context_entries, "retrieved": []},
+        config=config,
+    )
 
     # Extract the answer from the last AIMessage in the returned messages
     answer = ""
@@ -134,4 +129,4 @@ async def query(req: QueryRequest):
         )
         for entry in result.get("retrieved", [])
     ]
-    return QueryResponse(answer=answer, sources=sources)
+    return QueryResponse(thread_id=thread_id, answer=answer, sources=sources)

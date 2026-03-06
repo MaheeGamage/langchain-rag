@@ -1,17 +1,18 @@
 # app/graph.py
 
 import logging
+import sqlite3
 import time
 from typing import Annotated, TypedDict, List
 
-from click import prompt
 from langchain_core.documents import Document
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
+from langgraph.checkpoint.sqlite import SqliteSaver
 from .retriever import get_retriever
-from .config import LLM_PROVIDER, LLM_MODEL
+from .config import LLM_PROVIDER, LLM_MODEL, CONVERSATIONS_DB
 from .factory import get_llm
 from .models import ContextEntry
 
@@ -22,6 +23,10 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
+# Keep the connection alive for the lifetime of the process.
+# SqliteSaver requires check_same_thread=False for use across async request handlers.
+_db_conn = sqlite3.connect(CONVERSATIONS_DB, check_same_thread=False)
+_checkpointer = SqliteSaver(_db_conn)
 
 class RAGState(TypedDict):
     # --- from API request ---
@@ -58,13 +63,7 @@ def retrieve(state: RAGState):
     ]
     return {"retrieved": retrieved}
 
-def build_generate_prompt(state: RAGState) -> str:
-    # Latest user query
-    query = next(
-        (m.content for m in reversed(state["messages"]) if isinstance(m, HumanMessage)),
-        "",
-    )
-
+def build_messages(state: RAGState) -> list[BaseMessage]:
     # Retrieved chunks → string block
     rag_context = "\n\n".join(
         e.content for e in state.get("retrieved", []) if e.content
@@ -84,38 +83,46 @@ def build_generate_prompt(state: RAGState) -> str:
             user_context_parts.append(f"{header}\n{entry.content}")
     user_context = "\n\n".join(user_context_parts)
 
-    BASE_PROMPT = """
-    You are an AI assistant for an experiment tracking system built around MLflow,
-    repurposed to track experiments in quantum software development.
+    BASE_PROMPT = """You are an AI assistant for an experiment tracking system built around MLflow,
+repurposed to track experiments in quantum software development.
 
-    Your role is to help users understand how to use experiment tracking concepts
-    and how to apply them using mlflow by using it's sdks in quantum software experiments.
+Your role is to help users understand how to use experiment tracking concepts
+and how to apply them using mlflow by using it's sdks in quantum software experiments.
 
-    Provide clear, concise answers based on the context provided. But don't mention 
-    this to the user when you answer. If the context doesn't contain the information 
-    needed to answer the question, say you don't know.
-    """
-    
-    sections = [BASE_PROMPT]
+Provide clear, concise answers based on the context provided. But don't mention
+this to the user when you answer. If the context doesn't contain the information
+needed to answer the question, say you don't know."""
+
+    system_parts = [BASE_PROMPT]
     if user_context:
-        sections.append(f"User-provided context:\n{user_context}")
+        system_parts.append(f"User-provided context:\n{user_context}")
     if rag_context:
-        sections.append(f"Retrieved context:\n{rag_context}")
-    sections.append(f"Query:\n{query}")
+        system_parts.append(f"Retrieved context:\n{rag_context}")
 
-    prompt = "\n\n".join(sections)
-    return prompt
+    system_content = "\n\n".join(system_parts)
+
+    # Gemma models do not support SystemMessage — fold it into a human/ai pair instead
+    if "gemma" in LLM_MODEL.lower():
+        messages: list[BaseMessage] = [
+            HumanMessage(content=system_content),
+            AIMessage(content="Understood."),
+        ]
+    else:
+        messages = [SystemMessage(content=system_content)]
+
+    messages.extend(state["messages"])  # full history: past turns + latest HumanMessage
+    return messages
 
 
 def generate(state: RAGState):
-    prompt = build_generate_prompt(state)
+    messages = build_messages(state)
     t = time.perf_counter()
-    answer = llm.invoke(prompt)
+    answer = llm.invoke(messages)
     log.info("Generated answer in %.2fs", time.perf_counter() - t)
     return {"messages": [AIMessage(content=answer)]}
 
-def build_graph():
 
+def build_graph():
     builder = StateGraph(RAGState)
 
     builder.add_node("retrieve", retrieve)
@@ -125,7 +132,7 @@ def build_graph():
     builder.add_edge("retrieve", "generate")
     builder.add_edge("generate", END)
 
-    return builder.compile()
+    return builder.compile(checkpointer=_checkpointer)
 
 
 graph = build_graph()
