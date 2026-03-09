@@ -144,3 +144,72 @@ class QueryResponse(BaseModel):
         description="Document chunks retrieved from ChromaDB that were used to produce the answer.",
     )
 
+
+# ---------------------------------------------------------------------------
+# Evaluation models
+# ---------------------------------------------------------------------------
+
+VALID_SCORERS: frozenset[str] = frozenset({
+    "relevance", "correctness", "fluency", "groundedness",
+    "sufficiency", "safety", "conciseness", "domain_tone",
+})
+
+
+class EvalSample(BaseModel):
+    """A single question/answer pair for evaluation."""
+
+    question: str = Field(..., description="The question to run through the RAG pipeline.")
+    expected_response: str | None = Field(
+        None,
+        description="Ground-truth answer used by the `correctness` scorer.",
+    )
+    expected_facts: list[str] | None = Field(
+        None,
+        description="Key facts the answer must contain, used by fact-checking scorers.",
+    )
+
+
+class EvalRequest(BaseModel):
+    """Request body for `POST /evaluate`."""
+
+    dataset: list[EvalSample] = Field(
+        ...,
+        min_length=1,
+        description="One or more evaluation samples.",
+    )
+    scorers: list[str] = Field(
+        default=["relevance", "fluency", "groundedness"],
+        description=(
+            f"Scorers to run. Available: {sorted(VALID_SCORERS)}. "
+            "RAG-specific scorers (`groundedness`, `sufficiency`) inspect the "
+            "retrieval trace and require MLflow tracing to be active."
+        ),
+    )
+    judge_model: str | None = Field(
+        None,
+        description=(
+            "LiteLLM-format judge model override, e.g. `openai:/gpt-4o-mini` or "
+            "`ollama:/llama3.2`. Defaults to the `MLFLOW_JUDGE_MODEL` env var."
+        ),
+        examples=["openai:/gpt-4o-mini"],
+    )
+    experiment_name: str | None = Field(
+        None,
+        description="MLflow experiment name. Defaults to `MLFLOW_EXPERIMENT_NAME` env var.",
+    )
+
+
+class EvalResponse(BaseModel):
+    """Response body from `POST /evaluate`."""
+
+    run_id: str = Field(..., description="MLflow run ID for this evaluation run.")
+    experiment_name: str = Field(..., description="MLflow experiment name used.")
+    metrics: dict[str, float] = Field(
+        ...,
+        description="Aggregate metrics across all samples (mean/p90 per scorer).",
+    )
+    rows: list[dict] = Field(
+        ...,
+        description="Per-sample scores. Each entry mirrors one input sample.",
+    )
+

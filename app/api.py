@@ -1,8 +1,10 @@
 # app/api.py
 
-from app.schemas import QueryRequest, QueryResponse, SourceChunk
-from fastapi import FastAPI
+from app.schemas import QueryRequest, QueryResponse, SourceChunk, EvalRequest, EvalResponse
+from fastapi import FastAPI, HTTPException
 from langchain_core.messages import HumanMessage, AIMessage
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import uuid
 from .graph import graph
 from .models import ContextEntry
@@ -29,6 +31,14 @@ _TAGS = [
                        "injected context) and receive an answer grounded in the "
                        "indexed documents.",
     },
+    {
+        "name": "eval",
+        "description": (
+            "MLflow GenAI evaluation endpoints. Requires ``MLFLOW_ENABLED=true`` "
+            "in the environment. Uses ``mlflow.genai.evaluate()`` with built-in "
+            "LLM-as-a-Judge scorers to measure RAG pipeline quality."
+        ),
+    },
 ]
 
 # ── MLflow tracing setup ──────────────────────────────────────────────────────
@@ -38,6 +48,9 @@ if MLFLOW_ENABLED:
         mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
     mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
     mlflow.langchain.autolog()
+
+# Thread pool for running blocking evaluation jobs without blocking the event loop
+_eval_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mlflow-eval")
 
 app = FastAPI(
     title="LangChain RAG API",
@@ -141,3 +154,68 @@ async def query(req: QueryRequest):
         for entry in result.get("retrieved", [])
     ]
     return QueryResponse(thread_id=thread_id, answer=answer, sources=sources)
+
+
+@app.post(
+    "/evaluate",
+    response_model=EvalResponse,
+    tags=["eval"],
+    summary="Evaluate RAG pipeline quality with MLflow",
+    description=(
+        "Runs ``mlflow.genai.evaluate()`` against a provided dataset using "
+        "LLM-as-a-Judge scorers. Each sample is passed through the full RAG "
+        "pipeline (retrieval + generation) and scored by the selected judges.\n\n"
+        "**Requires** ``MLFLOW_ENABLED=true`` and a reachable MLflow tracking "
+        "server configured via ``MLFLOW_TRACKING_URI``.\n\n"
+        "**Available scorers**: `relevance`, `correctness`, `fluency`, "
+        "`groundedness`, `sufficiency`, `conciseness`, `domain_tone`.\n\n"
+        "RAG-specific scorers (`groundedness`, `sufficiency`) inspect the "
+        "retrieval trace and require no extra configuration.\n\n"
+        "**Judge model** can be overridden per-request via `judge_model` "
+        "(LiteLLM format: `openai:/gpt-4o-mini`, `ollama:/llama3.2`). "
+        "Defaults to `MLFLOW_JUDGE_MODEL` env var or MLflow's built-in default."
+    ),
+    response_description="Evaluation run ID, aggregate metrics, and per-row scores.",
+)
+async def evaluate(req: EvalRequest):
+    if not MLFLOW_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "MLflow is disabled. Set MLFLOW_ENABLED=true (and optionally "
+                "MLFLOW_TRACKING_URI) in the environment to use /evaluate."
+            ),
+        )
+
+    from .evaluator import run_evaluation
+
+    # Convert EvalSample objects to the dict format expected by mlflow.genai.evaluate
+    mlflow_dataset = []
+    for sample in req.dataset:
+        entry: dict = {"inputs": {"question": sample.question}}
+        expectations: dict = {}
+        if sample.expected_response:
+            expectations["expected_response"] = sample.expected_response
+        if sample.expected_facts:
+            expectations["expected_facts"] = sample.expected_facts
+        if expectations:
+            entry["expectations"] = expectations
+        mlflow_dataset.append(entry)
+
+    loop = asyncio.get_event_loop()
+    try:
+        result = await loop.run_in_executor(
+            _eval_executor,
+            lambda: run_evaluation(
+                dataset=mlflow_dataset,
+                scorer_names=req.scorers,
+                judge_model=req.judge_model,
+                experiment_name=req.experiment_name,
+            ),
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return EvalResponse(**result)

@@ -12,7 +12,7 @@ from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langgraph.checkpoint.sqlite import SqliteSaver
 from .retriever import get_retriever
-from .config import LLM_PROVIDER, LLM_MODEL, CONVERSATIONS_DB
+from .config import LLM_PROVIDER, LLM_MODEL, CONVERSATIONS_DB, RAG_SYSTEM_PROMPT
 from .factory import get_llm
 from .models import ContextEntry
 
@@ -83,17 +83,7 @@ def build_messages(state: RAGState) -> list[BaseMessage]:
             user_context_parts.append(f"{header}\n{entry.content}")
     user_context = "\n\n".join(user_context_parts)
 
-    BASE_PROMPT = """You are an AI assistant for an experiment tracking system built around MLflow,
-repurposed to track experiments in quantum software development.
-
-Your role is to help users understand how to use experiment tracking concepts
-and how to apply them using mlflow by using it's sdks in quantum software experiments.
-
-Provide clear, concise answers based on the context provided. But don't mention
-this to the user when you answer. If the context doesn't contain the information
-needed to answer the question, say you don't know."""
-
-    system_parts = [BASE_PROMPT]
+    system_parts = [RAG_SYSTEM_PROMPT]
     if user_context:
         system_parts.append(f"User-provided context:\n{user_context}")
     if rag_context:

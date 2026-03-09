@@ -113,6 +113,22 @@ CHROMA_TARGET: str = f"{scheme}://{CHROMA_HOST}:{CHROMA_PORT}"
 MLFLOW_ENABLED:         bool = _parse_bool("MLFLOW_ENABLED", "false")
 MLFLOW_TRACKING_URI:    str  = os.getenv("MLFLOW_TRACKING_URI",    "")
 MLFLOW_EXPERIMENT_NAME: str  = os.getenv("MLFLOW_EXPERIMENT_NAME", "langchain-rag")
+# Judge model for LLM-as-a-Judge evaluation. Format: "<provider>:/<model>",
+# e.g. "openai:/gpt-4o-mini", "ollama:/llama3". Empty string → MLflow default.
+MLFLOW_JUDGE_MODEL:     str  = os.getenv("MLFLOW_JUDGE_MODEL",     "")
+
+# ── RAG system prompt ─────────────────────────────────────────────────────────
+# Shared by both the LangGraph pipeline (graph.py) and the evaluation harness
+# (evaluator.py) to ensure evaluation matches production behaviour exactly.
+RAG_SYSTEM_PROMPT: str = (
+    "You are an AI assistant for an experiment tracking system built around MLflow,\n"
+    "repurposed to track experiments in quantum software development.\n\n"
+    "Your role is to help users understand how to use experiment tracking concepts\n"
+    "and how to apply them using mlflow by using it's sdks in quantum software experiments.\n\n"
+    "Provide clear, concise answers based on the context provided. But don't mention\n"
+    "this to the user when you answer. If the context doesn't contain the information\n"
+    "needed to answer the question, say you don't know."
+)
 
 # ── Chunking ──────────────────────────────────────────────────────────────────
 # ~500 tokens at ~4 chars/token with ~50-token overlap — standard middle ground.
