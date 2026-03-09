@@ -106,6 +106,14 @@ CONVERSATIONS_DB: str = os.getenv("CONVERSATIONS_DB", "./conversations.db")
 scheme = "https" if CHROMA_SSL else "http"
 CHROMA_TARGET: str = f"{scheme}://{CHROMA_HOST}:{CHROMA_PORT}"
 
+# ── MLflow tracing ───────────────────────────────────────────────────────────
+# Set MLFLOW_ENABLED=true in .env to activate automatic LangChain tracing.
+# MLFLOW_TRACKING_USERNAME / MLFLOW_TRACKING_PASSWORD are read natively by the
+# mlflow library — no need to set them here.
+MLFLOW_ENABLED:         bool = _parse_bool("MLFLOW_ENABLED", "false")
+MLFLOW_TRACKING_URI:    str  = os.getenv("MLFLOW_TRACKING_URI",    "")
+MLFLOW_EXPERIMENT_NAME: str  = os.getenv("MLFLOW_EXPERIMENT_NAME", "langchain-rag")
+
 # ── Chunking ──────────────────────────────────────────────────────────────────
 # ~500 tokens at ~4 chars/token with ~50-token overlap — standard middle ground.
 # Finer → more precise retrieval but loses surrounding context.
