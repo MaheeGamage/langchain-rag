@@ -10,8 +10,8 @@ LLM and Embedding providers are fully independent — any combination works.
 """
 
 from .config import (
-    LLM_PROVIDER, LLM_MODEL, LLM_API_KEY, LLM_BASE_URL,
-    EMBEDDING_PROVIDER, EMBEDDING_MODEL, EMBEDDING_API_KEY, EMBEDDING_BASE_URL,
+    JUDGE_LLM_MODEL, LLM_PROVIDER, LLM_MODEL, LLM_API_KEY, LLM_BASE_URL,
+    EMBEDDING_PROVIDER, EMBEDDING_MODEL, EMBEDDING_API_KEY, EMBEDDING_BASE_URL, JUDGE_LLM_MODEL
 )
 
 
@@ -57,3 +57,23 @@ def get_embeddings():
         )
 
     raise ValueError(f"Unsupported EMBEDDING_PROVIDER: {EMBEDDING_PROVIDER!r}")
+
+def get_judge_llm():
+    """Return an LLM instance for evaluation, separate from the main LLM used in the app."""
+    # For simplicity, we'll use the same provider as the main LLM, but with a different model.
+    if LLM_PROVIDER == "ollama":
+        from langchain_ollama import OllamaLLM
+        return OllamaLLM(model=JUDGE_LLM_MODEL, base_url=LLM_BASE_URL)
+
+    if LLM_PROVIDER == "openai":
+        from langchain_openai import ChatOpenAI
+        kwargs: dict = {"model": JUDGE_LLM_MODEL, "api_key": LLM_API_KEY}
+        if LLM_BASE_URL:
+            kwargs["base_url"] = LLM_BASE_URL
+        return ChatOpenAI(**kwargs)
+
+    if LLM_PROVIDER == "gemini":
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        return ChatGoogleGenerativeAI(model=JUDGE_LLM_MODEL, google_api_key=LLM_API_KEY)
+
+    raise ValueError(f"Unsupported LLM_PROVIDER: {LLM_PROVIDER!r}")

@@ -1,0 +1,10 @@
+[
+    {
+        "inputs": {
+            "question": "what is qprov?"
+        },
+        "expectations": {
+            "expected_response": "QProv is an automated system that collects and stores quantum computing provenance data"
+        }
+    }
+]

@@ -46,6 +46,7 @@ CHROMA_SSL: bool = _parse_bool("CHROMA_SSL", "false")
 _LLM_DEFAULTS: dict = {
     "ollama": {
         "model":   os.getenv("OLLAMA_LLM_MODEL",  "tinyllama"),
+        "judge_model": os.getenv("OLLAMA_JUDGE_LLM_MODEL", "phi3.5"),
         "api_key": None,
         "base_url": os.getenv("OLLAMA_BASE_URL",  "http://localhost:11434"),
     },
@@ -85,6 +86,7 @@ _llm = _LLM_DEFAULTS[LLM_PROVIDER]
 LLM_MODEL:    str       = _llm["model"]
 LLM_API_KEY:  str | None = _llm["api_key"]
 LLM_BASE_URL: str | None = _llm["base_url"]
+JUDGE_LLM_MODEL: str | None = _llm.get("judge_model")
 
 # ── Resolved Embedding values ─────────────────────────────────────────────────
 _emb = _EMBEDDING_DEFAULTS[EMBEDDING_PROVIDER]
