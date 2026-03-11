@@ -10,7 +10,7 @@ from mlflow.genai import scorer
 from mlflow.genai.scorers import Correctness, Guidelines
 
 from app.config import LLM_MODEL, LLM_BASE_URL
-from app.factory import get_judge_llm
+from app.factory import get_judge_model_uri
 from app.graph import graph
 
 
@@ -51,9 +51,8 @@ with open(_dataset_path) as f:
 def is_concise(outputs: str) -> bool:
     return len(outputs.split()) <= 5
 
-llm_judge = get_judge_llm()
 scorers = [
-    Correctness(),
+    Correctness(model=get_judge_model_uri()),
     # Guidelines(name="is_english", guidelines="The answer must be in English"),
     # is_concise,
 ]

@@ -58,22 +58,15 @@ def get_embeddings():
 
     raise ValueError(f"Unsupported EMBEDDING_PROVIDER: {EMBEDDING_PROVIDER!r}")
 
-def get_judge_llm():
-    """Return an LLM instance for evaluation, separate from the main LLM used in the app."""
-    # For simplicity, we'll use the same provider as the main LLM, but with a different model.
-    if LLM_PROVIDER == "ollama":
-        from langchain_ollama import OllamaLLM
-        return OllamaLLM(model=JUDGE_LLM_MODEL, base_url=LLM_BASE_URL)
 
-    if LLM_PROVIDER == "openai":
-        from langchain_openai import ChatOpenAI
-        kwargs: dict = {"model": JUDGE_LLM_MODEL, "api_key": LLM_API_KEY}
-        if LLM_BASE_URL:
-            kwargs["base_url"] = LLM_BASE_URL
-        return ChatOpenAI(**kwargs)
+def get_judge_model_uri() -> str:
+    """Return an MLflow judge model URI string for use with built-in scorers.
 
-    if LLM_PROVIDER == "gemini":
-        from langchain_google_genai import ChatGoogleGenerativeAI
-        return ChatGoogleGenerativeAI(model=JUDGE_LLM_MODEL, google_api_key=LLM_API_KEY)
-
-    raise ValueError(f"Unsupported LLM_PROVIDER: {LLM_PROVIDER!r}")
+    MLflow scorers (e.g. Correctness) accept a ``model`` parameter in the form
+    ``"<provider>:/<model-name>"``:
+    - ``openai:/gpt-4o-mini``  — routed via MLflow's native OpenAI adapter
+    - ``gemini:/gemini-2.5-flash``  — routed via LiteLLM (requires ``pip install litellm``)
+    - ``ollama:/phi3.5``  — routed via LiteLLM (requires ``pip install litellm``)
+    """
+    model = JUDGE_LLM_MODEL or LLM_MODEL
+    return f"{LLM_PROVIDER}:/{model}"
