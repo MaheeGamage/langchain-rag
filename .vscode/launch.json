@@ -17,7 +17,8 @@
             "module": "evaluation.evaluator",
             "python": "${workspaceFolder}/.venv/bin/python",
             "cwd": "${workspaceFolder}",
-            "console": "integratedTerminal"
+            "console": "integratedTerminal",
+            "subProcess": true
         }
     ]
 }

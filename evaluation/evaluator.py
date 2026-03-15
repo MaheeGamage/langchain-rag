@@ -13,9 +13,8 @@ from app.config import LLM_MODEL, LLM_BASE_URL
 from app.factory import get_judge_model_uri
 from app.graph import graph
 
-
 # Use different env variable when using a different LLM provider
-mlflow.set_experiment("RAG Agent Evaluation 1")
+mlflow.set_experiment("RAG Agent Evaluation 2")
 
 def rag_agent(question: str) -> str:
     config = {"configurable": {"thread_id": str(uuid.uuid4())}}
