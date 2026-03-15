@@ -47,3 +47,7 @@ htmlcov/
 # ── OS ─────────────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+
+# ── Knowledge base for RAG ────────────────────────────────────────────────────────
+knowledge_ingestion/content/original-content
+knowledge_ingestion/content/refined-content

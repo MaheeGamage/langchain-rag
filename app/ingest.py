@@ -22,6 +22,7 @@ Usage
   DATA_ROOT=./refined-content python -m ingest_pipeline.ingest
 """
 
+import hashlib
 import logging
 import time
 from collections import Counter
@@ -56,7 +57,12 @@ def _setup_logger() -> logging.Logger:
 
     return logger
 
+# Other 
 
+def generate_doc_id(content: str) -> str:
+    """Generate a stable ID based on document content."""
+    return hashlib.md5(content.encode("utf-8")).hexdigest()
+    
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def ingest() -> None:
@@ -156,6 +162,9 @@ def ingest() -> None:
 
     batches = [chunks[i : i + BATCH_SIZE] for i in range(0, len(chunks), BATCH_SIZE)]
     total_batches = len(batches)
+    seen_ids: set[str] = set()
+    skipped_dupes = 0
+    failed_docs = 0
 
     with tqdm(
         total=len(chunks),
@@ -166,18 +175,55 @@ def ingest() -> None:
     ) as pbar:
         for i, batch in enumerate(batches):
             t_batch = time.time()
-            vectorstore.add_documents(batch)
+            # Assign deterministic IDs and drop duplicates within this run
+            ids: list[str] = []
+            docs_to_add = []
+            for doc in batch:
+                doc_id = generate_doc_id(doc.page_content)
+                if doc_id in seen_ids:
+                    skipped_dupes += 1
+                    continue
+                seen_ids.add(doc_id)
+                ids.append(doc_id)
+                docs_to_add.append(doc)
+
+            if not docs_to_add:
+                log.info(f"Batch {i+1}/{total_batches}: all {len(batch)} chunks skipped (duplicate IDs)")
+                pbar.update(len(batch))
+                continue
+
+            try:
+                vectorstore.add_documents(docs_to_add, ids=ids)
+            except Exception as exc:
+                # Fall back to per-document ingest to isolate failures
+                log.exception(
+                    f"Batch {i+1}/{total_batches}: batch add failed, retrying per-doc. "
+                    f"error={exc!r}"
+                )
+                for doc, doc_id in zip(docs_to_add, ids):
+                    try:
+                        vectorstore.add_documents([doc], ids=[doc_id])
+                    except Exception as doc_exc:
+                        failed_docs += 1
+                        log.exception(
+                            "Doc ingest failed; skipping. "
+                            f"id={doc_id} source={doc.metadata.get('source_file','?')} "
+                            f"error={doc_exc!r}"
+                        )
             elapsed = time.time() - t_batch
             log.info(
-                f"Batch {i+1}/{total_batches}: {len(batch)} chunks in {elapsed:.1f}s "
-                f"(avg {elapsed / len(batch):.2f}s/chunk)"
+                f"Batch {i+1}/{total_batches}: {len(docs_to_add)} added, "
+                f"{len(batch) - len(docs_to_add)} skipped in {elapsed:.1f}s "
+                f"(avg {elapsed / max(len(docs_to_add), 1):.2f}s/chunk)"
             )
             pbar.update(len(batch))
 
     total_time = time.time() - t_start
     summary = (
         f"Ingestion complete: {len(chunks):,} chunks from "
-        f"{len(all_files) - skipped_count:,} files in {total_time:.1f}s"
+        f"{len(all_files) - skipped_count:,} files in {total_time:.1f}s "
+        f"(skipped {skipped_dupes:,} duplicate chunks, "
+        f"failed {failed_docs:,} chunks)"
     )
     print(f"\n    ✓ {summary}")
     print(f"    Log saved to: {LOG_FILE}")

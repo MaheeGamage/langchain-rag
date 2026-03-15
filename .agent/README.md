@@ -63,6 +63,7 @@ Include the session log in the same commit (or a follow-up commit) as the code c
 | Rule | Reason |
 |---|---|
 | One file per session | Keeps history granular and easy to diff |
+| One session log per chat | Avoids duplicate logs for the same interaction |
 | Commit logs with code | Ties agent activity to specific repo states |
 | Never delete old logs | Logs are an audit trail, not a scratchpad |
 | Be specific in "Actions Taken" | Vague entries are not useful for future agents |

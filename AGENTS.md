@@ -239,6 +239,20 @@ Embeddings are sent to Ollama in batches of `BATCH_SIZE = 25` chunks
 (configured at the top of `ingest.py`). Lower this if Ollama OOMs; raise it
 to speed up ingest on machines with more VRAM.
 
+### Ingest deduplication
+
+`app/ingest.py` assigns a deterministic ID from chunk content and skips any
+duplicate IDs during a single ingest run. This prevents Chroma upsert errors
+from duplicate IDs and avoids embedding identical chunks more than once per run.
+If you need a different uniqueness policy (e.g., per-source), update the ID
+strategy in `generate_doc_id()`.
+
+### Ingest error tolerance
+
+If a batch upsert fails, `app/ingest.py` retries per document and skips only
+the failing chunks, logging their IDs and source paths. This keeps ingestion
+running even when some documents are malformed or trigger provider errors.
+
 ### Streamlit UI
 
 `ui/streamlit_app.py` is a **pure presentation layer** — it does **not** import
@@ -274,17 +288,11 @@ via HTTP calls to the FastAPI `/query` endpoint.
 ## 6. Agent Logging
 
 All sessions **must** be logged. See [`.agent/README.md`](.agent/README.md) for
-the full convention. Summary:
+the full convention and template. This file intentionally does **not** duplicate
+those instructions.
 
-1. **Create a session file** at `.agent/sessions/YYYY-MM-DD_session-NNN_short-summary.md`
-   before (or immediately after) starting work.  The `short-summary` is a
-   kebab-case slug (3-5 words) so the purpose is visible in a directory listing.
-2. Use the template sections:  Goal, Prompts Summary, Actions Taken, Outcome, Agent.
-3. Be specific in **Actions Taken** — list every file created/edited and every
-   command run.
-4. Log the session in the same commit as the code changes it describes.
-5. **Never delete** old session logs.
-6. **If you update `AGENTS.md`**, record exactly which sections changed and why
+Key reminder:
+1. If you update `AGENTS.md`, record exactly which sections changed and why
    in the session log — `AGENTS.md` itself carries no change history.
 
 Find sessions that touched a specific file:
