@@ -10,8 +10,8 @@ LLM and Embedding providers are fully independent — any combination works.
 """
 
 from .config import (
-    JUDGE_LLM_MODEL, LLM_PROVIDER, LLM_MODEL, LLM_API_KEY, LLM_BASE_URL,
-    EMBEDDING_PROVIDER, EMBEDDING_MODEL, EMBEDDING_API_KEY, EMBEDDING_BASE_URL, JUDGE_LLM_MODEL
+    JUDGE_LLM_MODEL, JUDGE_PROVIDER, LLM_PROVIDER, LLM_MODEL, LLM_API_KEY, LLM_BASE_URL,
+    EMBEDDING_PROVIDER, EMBEDDING_MODEL, EMBEDDING_API_KEY, EMBEDDING_BASE_URL
 )
 
 
@@ -68,5 +68,6 @@ def get_judge_model_uri() -> str:
     - ``gemini:/gemini-2.5-flash``  — routed via LiteLLM (requires ``pip install litellm``)
     - ``ollama:/phi3.5``  — routed via LiteLLM (requires ``pip install litellm``)
     """
-    model = JUDGE_LLM_MODEL or LLM_MODEL
-    return f"{LLM_PROVIDER}:/{model}"
+    judge_model = JUDGE_LLM_MODEL
+    print(f"Using judge model: {JUDGE_PROVIDER} {judge_model}")
+    return f"{JUDGE_PROVIDER}:/{judge_model}"

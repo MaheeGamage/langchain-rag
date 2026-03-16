@@ -30,8 +30,9 @@ def _parse_int(name: str, default: str) -> int:
 # EMBEDDING_PROVIDER controls which service encodes text into vectors.
 LLM_PROVIDER:       str = os.getenv("LLM_PROVIDER",       "ollama")
 EMBEDDING_PROVIDER: str = os.getenv("EMBEDDING_PROVIDER", "ollama")
+JUDGE_PROVIDER: str = os.getenv("JUDGE_PROVIDER", "ollama")
 
-for _p, _name in ((LLM_PROVIDER, "LLM_PROVIDER"), (EMBEDDING_PROVIDER, "EMBEDDING_PROVIDER")):
+for _p, _name in ((LLM_PROVIDER, "LLM_PROVIDER"), (EMBEDDING_PROVIDER, "EMBEDDING_PROVIDER"), (JUDGE_PROVIDER, "JUDGE_PROVIDER")):
     if _p not in _VALID_PROVIDERS:
         raise ValueError(f"Unknown {_name}={_p!r}. Choose from: {list(_VALID_PROVIDERS)}")
 
@@ -86,13 +87,18 @@ _llm = _LLM_DEFAULTS[LLM_PROVIDER]
 LLM_MODEL:    str       = _llm["model"]
 LLM_API_KEY:  str | None = _llm["api_key"]
 LLM_BASE_URL: str | None = _llm["base_url"]
-JUDGE_LLM_MODEL: str | None = _llm.get("judge_model")
 
 # ── Resolved Embedding values ─────────────────────────────────────────────────
 _emb = _EMBEDDING_DEFAULTS[EMBEDDING_PROVIDER]
 EMBEDDING_MODEL:    str       = _emb["model"]
 EMBEDDING_API_KEY:  str | None = _emb["api_key"]
 EMBEDDING_BASE_URL: str | None = _emb["base_url"]
+
+# ── Resolved Judge values ─────────────────────────────────────────────────
+_judge = _LLM_DEFAULTS[JUDGE_PROVIDER]
+JUDGE_LLM_MODEL: str | None = _judge.get("judge_model")
+JUDGE_LLM_API_KEY: str | None = _judge["api_key"]
+JUDGE_LLM_BASE_URL: str | None = _judge["base_url"]
 
 # ChromaDB collection is named after the embedding model so that embeddings
 # from different providers/models live in separate collections and are never
