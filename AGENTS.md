@@ -266,6 +266,13 @@ via HTTP calls to the FastAPI `/query` endpoint.
 - Each message dict: `{"role": "user"|"assistant", "content": str, "sources": list}`.
 - Source documents are shown in a collapsible expander below each answer.
 
+### Streaming API
+
+- The API exposes `POST /query` for standard JSON responses and
+  `POST /query/stream` for SSE token streaming.
+- `/query/stream` emits `token` events (incremental text), then a `done` event
+  with the final `{thread_id, answer, sources}` payload.
+
 ---
 
 ## 5. Code Style & Structure Rules

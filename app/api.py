@@ -1,10 +1,12 @@
 # app/api.py
 
+import json
 from app.schemas import QueryRequest, QueryResponse, SourceChunk
 from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage, AIMessage
 import uuid
-from .graph import graph
+from .graph import graph, build_messages, retrieve
 from .models import ContextEntry
 from .config import (
     CHROMA_TARGET,
@@ -16,6 +18,7 @@ from .config import (
     MLFLOW_EXPERIMENT_NAME,
     MLFLOW_TRACKING_URI,
 )
+from .factory import get_llm
 
 _TAGS = [
     {
@@ -95,6 +98,23 @@ async def config():
     }
 
 
+def _build_sources(entries: list[ContextEntry]) -> list[SourceChunk]:
+    return [
+        SourceChunk(
+            content=entry.content or "",
+            metadata={
+                "source": entry.name or "",
+                **({"score": entry.score} if entry.score is not None else {}),
+            },
+        )
+        for entry in entries
+    ]
+
+
+def _format_sse(event: str, payload: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=True)}\n\n"
+
+
 @app.post(
     "/query",
     response_model=QueryResponse,
@@ -130,14 +150,60 @@ async def query(req: QueryRequest):
             answer = m.content
             break
 
-    sources = [
-        SourceChunk(
-            content=entry.content or "",
-            metadata={
-                "source": entry.name or "",
-                **({"score": entry.score} if entry.score is not None else {}),
-            },
-        )
-        for entry in result.get("retrieved", [])
-    ]
+    sources = _build_sources(result.get("retrieved", []))
     return QueryResponse(thread_id=thread_id, answer=answer, sources=sources)
+
+
+@app.post(
+    "/query/stream",
+    tags=["rag"],
+    summary="Ask a question (streaming)",
+    description=(
+        "Streaming variant of `/query` that emits Server-Sent Events (SSE). "
+        "Events: `token` (incremental text), `done` (final payload), `error`."
+    ),
+    response_description="SSE stream of tokens followed by a final JSON payload.",
+)
+async def query_stream(req: QueryRequest):
+    thread_id = req.conversation.id if req.conversation and req.conversation.id else str(uuid.uuid4())
+    context_entries = req.context.entries if req.context else []
+
+    async def event_generator():
+        try:
+            state = {
+                "messages": [HumanMessage(content=req.message)],
+                "context": context_entries,
+                "retrieved": [],
+            }
+            state.update(retrieve(state))
+            messages = build_messages(state)
+            sources = _build_sources(state.get("retrieved", []))
+
+            llm = get_llm()
+            answer_parts: list[str] = []
+            for chunk in llm.stream(messages):
+                text = getattr(chunk, "content", None)
+                if text is None:
+                    text = str(chunk)
+                if text:
+                    answer_parts.append(text)
+                    yield _format_sse("token", {"text": text})
+            yield _format_sse(
+                "done",
+                {
+                    "thread_id": thread_id,
+                    "answer": "".join(answer_parts),
+                    "sources": [s.model_dump() for s in sources],
+                },
+            )
+        except Exception as exc:
+            yield _format_sse("error", {"thread_id": thread_id, "error": str(exc)})
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
+    )

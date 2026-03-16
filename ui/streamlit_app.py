@@ -5,6 +5,7 @@
 
 import os
 import streamlit as st
+import json
 import requests
 
 # ── API base URL ───────────────────────────────────────────────────────────────
@@ -51,6 +52,60 @@ def _query_api(question: str, thread_id: str | None = None) -> dict:
     resp.raise_for_status()
     return resp.json()
 
+def _iter_sse_lines(resp: requests.Response):
+    buffer = ""
+    for chunk in resp.iter_content(chunk_size=None):
+        if not chunk:
+            continue
+        buffer += chunk.decode("utf-8", errors="ignore")
+        while "\n" in buffer:
+            line, buffer = buffer.split("\n", 1)
+            yield line.strip("\r")
+
+
+def _query_api_stream(question: str, thread_id: str | None = None):
+    """Stream tokens and final payload from /query/stream via SSE."""
+    payload = {
+        "message": question,
+        "conversation": {
+            "id": thread_id,
+        },
+        "context": {
+            "entries": [],
+        },
+        "meta": {
+            "clientId": "streamlit",
+        },
+    }
+    resp = requests.post(
+        f"{API_URL}/query/stream",
+        json=payload,
+        timeout=120,
+        stream=True,
+        headers={"Accept": "text/event-stream"},
+    )
+    resp.raise_for_status()
+
+    event_type = None
+    data_lines: list[str] = []
+    for line in _iter_sse_lines(resp):
+        if not line:
+            if data_lines:
+                data_str = "\n".join(data_lines)
+                data_lines = []
+                try:
+                    payload = json.loads(data_str)
+                except json.JSONDecodeError:
+                    payload = {"text": data_str}
+                yield event_type or "message", payload
+                event_type = None
+            continue
+
+        if line.startswith("event:"):
+            event_type = line[len("event:"):].strip()
+        elif line.startswith("data:"):
+            data_lines.append(line[len("data:"):].lstrip())
+
 
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -74,6 +129,10 @@ with st.sidebar:
         st.markdown(f"- Embeddings: `{api_config.get('embedding_model', '?')}`")
     else:
         st.warning("API not reachable")
+
+    st.divider()
+
+    use_streaming = st.toggle("Stream responses", value=True)
 
     st.divider()
 
@@ -129,18 +188,38 @@ if prompt := st.chat_input("Ask a question about your documents…"):
 
     # 2. Call the API and display the answer
     with st.chat_message("assistant"):
-        with st.spinner("Retrieving and generating…"):
-            try:
-                result = _query_api(prompt, thread_id=st.session_state.thread_id)
-                answer = result.get("answer", "No answer returned.")
-                sources = result.get("sources", [])
-                st.session_state.thread_id = result.get("thread_id", st.session_state.thread_id)
-            except requests.exceptions.ConnectionError:
-                answer = "⚠️ Could not connect to the API. Is the server running?"
-                sources = []
-            except Exception as e:
-                answer = f"⚠️ API error: {e}"
-                sources = []
+        try:
+            if use_streaming:
+                content = ""
+                answer_box = st.empty()
+                sources: list[dict] = []
+                with st.spinner("Retrieving and generating…"):
+                    for event, payload in _query_api_stream(prompt, thread_id=st.session_state.thread_id):
+                        if event == "token":
+                            text = payload.get("text", "")
+                            if text:
+                                content += text
+                                answer_box.markdown(content)
+                        elif event == "done":
+                            content = payload.get("answer", content)
+                            st.session_state.thread_id = payload.get("thread_id", st.session_state.thread_id)
+                            sources = payload.get("sources", [])
+                        elif event == "error":
+                            content = f"⚠️ API error: {payload.get('error', 'Unknown error')}"
+                            answer_box.markdown(content)
+                answer = content or "No answer returned."
+            else:
+                with st.spinner("Retrieving and generating…"):
+                    result = _query_api(prompt, thread_id=st.session_state.thread_id)
+                    answer = result.get("answer", "No answer returned.")
+                    sources = result.get("sources", [])
+                    st.session_state.thread_id = result.get("thread_id", st.session_state.thread_id)
+        except requests.exceptions.ConnectionError:
+            answer = "⚠️ Could not connect to the API. Is the server running?"
+            sources = []
+        except Exception as e:
+            answer = f"⚠️ API error: {e}"
+            sources = []
 
         st.markdown(answer)
         if sources:
