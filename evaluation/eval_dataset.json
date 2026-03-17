@@ -6,5 +6,85 @@
         "expectations": {
             "expected_response": "QProv is an automated system that collects and stores quantum computing provenance data"
         }
+    },
+    {
+        "inputs": {
+            "question": "What Qiskit API call should I use to log QProv field Q4 (Circuit Width) to MLflow?"
+        },
+        "expectations": {
+            "expected_response": "You should use circuit.num_qubits to log QProv field Q4 (Circuit Width), and log it with mlflow.log_param('circuit_width', circuit.num_qubits). Do not use circuit.width(), because Qiskit's width() returns the total number of qubits plus classical bits combined, which is broader than the QProv definition. QProv defines circuit width strictly as the number of qubits."
+        }
+    },
+    {
+        "inputs": {
+            "question": "Why is recording the transpilation random seed important for quantum experiment reproducibility?"
+        },
+        "expectations": {
+            "expected_response": "Recording the transpilation random seed (QProv field C4) is important because transpilation involves randomized algorithms for qubit routing and layout assignment, which is an NP-hard problem. Without a fixed seed, running the same logical circuit through the transpiler on two occasions may produce different physical circuits with different qubit assignments and gate mappings. This means the experiment cannot be exactly reproduced. By logging the seed via mlflow.log_param('transpile_seed', seed) and passing it as seed_transpiler to qiskit.transpile(), the exact compiled circuit can be reconstructed."
+        }
+    },
+    {
+        "inputs": {
+            "question": "Which QProv category and field ID corresponds to decoherence times, and what does it include?"
+        },
+        "expectations": {
+            "expected_response": "Decoherence times correspond to QProv field QC2 in the Quantum Computer category. It is a composite attribute comprising T1 (energy relaxation time) and T2 (dephasing time) for each qubit on the device, measured in microseconds. These times change between hardware calibrations and must be recorded at the time of execution. They define the coherence window within which the circuit must complete execution — circuits that take longer than the T2 time of a qubit will produce unreliable results."
+        }
+    },
+    {
+        "inputs": {
+            "question": "How do I save a Qiskit circuit as an MLflow artifact so that the execution order is preserved?"
+        },
+        "expectations": {
+            "expected_response": "Use Qiskit's QPY serialization format to save the circuit. QPY preserves the complete QuantumCircuit object including the ordered list of CircuitInstruction objects, which represents the execution order (QProv field Q3). The code is: from qiskit import qpy; with open('circuit.qpy', 'wb') as f: qpy.dump(circuit, f); mlflow.log_artifact('circuit.qpy'). To restore the circuit later: with open('circuit.qpy', 'rb') as f: circuits = qpy.load(f); restored = circuits[0]. Note that qpy.load() always returns a list even for a single circuit."
+        }
+    },
+    {
+        "inputs": {
+            "question": "What is the difference between circuit depth (Q5) and circuit size (Q6) in the QProv specification?"
+        },
+        "expectations": {
+            "expected_response": "In the QProv specification, circuit depth (Q5) is the maximum number of gates executed sequentially on any single qubit — it measures the longest sequential chain of operations and determines execution time and noise accumulation. Circuit size (Q6) is the total number of gate operations across the entire circuit. A circuit can have low depth but high size if many gates run in parallel across different qubits. Depth is the critical metric for hardware compatibility (must fit within decoherence time), while size determines cumulative gate error. In Qiskit, depth is obtained via circuit.depth() and size via circuit.size()."
+        }
+    },
+    {
+        "inputs": {
+            "question": "How do I log gate fidelities for all qubits and qubit pairs of a backend to MLflow?"
+        },
+        "expectations": {
+            "expected_response": "Gate fidelities correspond to QProv field QC5. Use backend.properties().gate_error() to retrieve error rates. For single-qubit gates, loop over qubits: for qubit_idx in range(backend.num_qubits): sx_error = backend.properties().gate_error('sx', qubit_idx); mlflow.log_metric(f'sx_error_q{qubit_idx}', sx_error). For two-qubit CX gates, loop over the coupling map: for edge in backend.coupling_map: cx_error = backend.properties().gate_error('cx', edge); mlflow.log_metric(f'cx_error_q{edge[0]}_q{edge[1]}', cx_error). Wrap each call in try/except as not all gate-qubit combinations are supported on every backend."
+        }
+    },
+    {
+        "inputs": {
+            "question": "What QProv fields should I log for a VQE experiment, and how does this differ from a standard circuit execution?"
+        },
+        "expectations": {
+            "expected_response": "A VQE experiment requires all standard QProv fields plus three additional ones specific to variational algorithms. The additional fields are: E4 (Intermediate Results) — energy values and parameter values at each optimization iteration, logged with mlflow.log_metric('intermediate_energy', energy, step=iteration); E5 (Number of Iterations) — total number of optimization steps completed, logged with mlflow.log_metric('num_iterations', total); and Q7 (Applied Encoding) — the encoding scheme used to embed classical input into the circuit, logged with mlflow.log_param('encoding_type', 'angle'). Additionally, E1 (Input Data) is more important for VQE since classical input data is encoded into circuit parameters. Standard circuits typically cannot log E4 because measurement collapses superposition, but variational algorithms have explicit classical-quantum iteration loops where intermediate results can be captured."
+        }
+    },
+    {
+        "inputs": {
+            "question": "What does QProv field E7 cover, and what techniques does it NOT include?"
+        },
+        "expectations": {
+            "expected_response": "QProv field E7 (Applied Error Mitigation) covers specifically readout-error mitigation techniques — post-processing methods that correct measurement errors in the output bitstring distribution. This includes techniques such as calibration matrix inversion, iterative Bayesian unfolding, and detector tomography-based correction. E7 does NOT cover gate-error mitigation techniques such as Zero-Noise Extrapolation (ZNE), Probabilistic Error Cancellation (PEC), or Twirling — these are outside the QProv scope. The field should always be logged even when no mitigation is applied, using mlflow.log_param('readout_mitigation', 'none'), because results with and without mitigation are not directly comparable."
+        }
+    },
+    {
+        "inputs": {
+            "question": "How do I log the qubit assignments made by the Qiskit transpiler to MLflow?"
+        },
+        "expectations": {
+            "expected_response": "Qubit assignments correspond to QProv field C1. After transpiling with qiskit.transpile(), access the layout from the transpiled circuit: transpiled = transpile(circuit, backend, seed_transpiler=42, optimization_level=3). Then log: if transpiled.layout is not None: mlflow.log_param('qubit_layout_final', str(transpiled.layout.final_layout)); mlflow.log_param('qubit_layout_initial', str(transpiled.layout.initial_layout)). The layout records the mapping from logical circuit qubits to physical device qubits. Different qubit assignments lead to different circuit depths and error rates due to hardware connectivity constraints, making this essential for reproducibility."
+        }
+    },
+    {
+        "inputs": {
+            "question": "A researcher wants to compare two runs of the same Bell state circuit on different backends. What QProv fields are most critical to log to make this comparison meaningful?"
+        },
+        "expectations": {
+            "expected_response": "For a meaningful cross-backend comparison, the most critical QProv fields are: From the Quantum Computer category — QC1 (Number of Qubits) to confirm both backends supported the circuit; QC2 (Decoherence Times, T1/T2) since these directly determine achievable circuit depth; QC5 (Gate Fidelities) as different backends have different error rates per gate and qubit; QC7 (Readout Fidelities) because measurement accuracy varies significantly between backends. From the Compilation category — C1 (Qubit Assignments) since different backends will map logical qubits to different physical qubits; C3 (Optimization Goals) and C4 (Random Seed) to ensure both circuits were compiled under the same conditions; C2 (Gate Mappings, via transpiled QPY artifact) to compare the actual physical circuits executed. From the Execution category — E3 (Number of Shots) must be identical for a fair comparison; E7 (Applied Error Mitigation) must be logged to ensure both runs used the same or no mitigation. Without these fields, observed differences in output distributions cannot be attributed to hardware differences versus compilation or experimental setup differences."
+        }
     }
 ]

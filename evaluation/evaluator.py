@@ -1,4 +1,5 @@
 # quickstart_eval.py
+import argparse
 import json
 import os
 from urllib import response
@@ -47,9 +48,15 @@ def qa_predict_fn(question: str) -> str:
 
 
 # Evaluation dataset
-_dataset_path = os.path.join(os.path.dirname(__file__), "eval_dataset_5.json")
-with open(_dataset_path) as f:
-    eval_dataset = json.load(f)
+_dataset_path = os.path.join(os.path.dirname(__file__), "eval_dataset.json")
+def load_eval_dataset(num_eval_questions: int | None = None):
+    with open(_dataset_path) as f:
+        dataset = json.load(f)
+
+    if num_eval_questions is None:
+        return dataset
+
+    return dataset[:num_eval_questions]
 
 
 # Scorers
@@ -66,6 +73,22 @@ scorers = [
 
 # Run evaluation
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description=(
+            "Run evaluator on all questions or the first "
+            "num_eval_questions questions."
+        )
+    )
+    parser.add_argument(
+        "--num-eval-questions",
+        type=int,
+        default=None,
+        help="Number of questions to evaluate from the beginning. Defaults to all.",
+    )
+    args = parser.parse_args()
+
+    eval_dataset = load_eval_dataset(args.num_eval_questions)
+
     results = mlflow.genai.evaluate(
         data=eval_dataset,
         predict_fn=qa_predict_fn,
