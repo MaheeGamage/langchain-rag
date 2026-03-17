@@ -69,5 +69,6 @@ def get_judge_model_uri() -> str:
     - ``ollama:/phi3.5``  — routed via LiteLLM (requires ``pip install litellm``)
     """
     judge_model = JUDGE_LLM_MODEL
-    print(f"Using judge model: {JUDGE_PROVIDER} {judge_model}")
-    return f"{JUDGE_PROVIDER}:/{judge_model}"
+    judge_model_uri = f"{JUDGE_PROVIDER}:/{judge_model}"
+    print(f"Using judge model: {judge_model_uri}")
+    return judge_model_uri

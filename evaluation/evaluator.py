@@ -3,6 +3,14 @@ import json
 import os
 from urllib import response
 import uuid
+import litellm
+
+# LiteLLM (used by MLflow judge) reads OLLAMA_API_BASE, not OLLAMA_BASE_URL.
+if "OLLAMA_API_BASE" not in os.environ:
+    _ollama_base = os.getenv("OLLAMA_BASE_URL")
+    if _ollama_base:
+        os.environ["OLLAMA_API_BASE"] = _ollama_base
+
 from langchain_core.messages import AIMessage
 import mlflow
 from openai import OpenAI
@@ -14,7 +22,7 @@ from app.factory import get_judge_model_uri
 from app.graph import graph
 
 # Use different env variable when using a different LLM provider
-mlflow.set_experiment("RAG Agent Evaluation 2")
+mlflow.set_experiment("RAG Agent Evaluation 4")
 
 def rag_agent(question: str) -> str:
     config = {"configurable": {"thread_id": str(uuid.uuid4())}}
@@ -34,13 +42,13 @@ def rag_agent(question: str) -> str:
 
 # Wrapper function for evaluation
 def qa_predict_fn(question: str) -> str:
-    out = rag_agent(question)
-    return out
-# {"response": response}
+    response = rag_agent(question)
+    return response
 
 
 # Evaluation dataset
-_dataset_path = os.path.join(os.path.dirname(__file__), "eval_dataset.json")
+# _dataset_path = os.path.join(os.path.dirname(__file__), "eval_dataset.json")
+_dataset_path = os.path.join(os.path.dirname(__file__), "eval_dataset_5.json")
 with open(_dataset_path) as f:
     eval_dataset = json.load(f)
 
@@ -52,6 +60,9 @@ def is_concise(outputs: str) -> bool:
 
 scorers = [
     Correctness(model=get_judge_model_uri()),
+    # Correctness(model="ollama_chat:/phi3.5"),
+    # Correctness(model="ollama:/phi3.5"),
+    
     # Guidelines(name="is_english", guidelines="The answer must be in English"),
     # is_concise,
 ]
