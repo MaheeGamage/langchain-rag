@@ -47,7 +47,6 @@ def qa_predict_fn(question: str) -> str:
 
 
 # Evaluation dataset
-# _dataset_path = os.path.join(os.path.dirname(__file__), "eval_dataset.json")
 _dataset_path = os.path.join(os.path.dirname(__file__), "eval_dataset_5.json")
 with open(_dataset_path) as f:
     eval_dataset = json.load(f)
@@ -60,9 +59,7 @@ def is_concise(outputs: str) -> bool:
 
 scorers = [
     Correctness(model=get_judge_model_uri()),
-    # Correctness(model="ollama_chat:/phi3.5"),
-    # Correctness(model="ollama:/phi3.5"),
-    
+
     # Guidelines(name="is_english", guidelines="The answer must be in English"),
     # is_concise,
 ]

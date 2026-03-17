@@ -47,7 +47,7 @@ CHROMA_SSL: bool = _parse_bool("CHROMA_SSL", "false")
 _LLM_DEFAULTS: dict = {
     "ollama": {
         "model":   os.getenv("OLLAMA_LLM_MODEL",  "tinyllama"),
-        "judge_model": os.getenv("OLLAMA_JUDGE_LLM_MODEL", "phi3.5"),
+        "judge_model": os.getenv("OLLAMA_JUDGE_LLM_MODEL", None),
         "api_key": None,
         "base_url": os.getenv("OLLAMA_BASE_URL",  "http://localhost:11434"),
     },
@@ -58,6 +58,7 @@ _LLM_DEFAULTS: dict = {
     },
     "gemini": {
         "model":   os.getenv("GEMINI_LLM_MODEL",  "gemini-2.5-flash"),
+        "judge_model": os.getenv("GEMINI_JUDGE_LLM_MODEL", None),
         "api_key": os.getenv("GEMINI_API_KEY",    ""),
         "base_url": None,
     },
