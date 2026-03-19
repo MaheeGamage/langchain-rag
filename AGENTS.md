@@ -320,6 +320,13 @@ grep -rl "app/graph.py" .agent/sessions/
   `langchain-rag` image built by `api`. Adding `build:` to `ui` with the same `image:` name
   causes a conflict ("image already exists" error) because both services would try to tag
   the same name simultaneously.
+- **Don't pass `ragas.metrics.collections.*` metrics to `ragas.evaluate()`** in Ragas 0.4 —
+  `evaluate()` still validates legacy `Metric` types. For collections metrics, run
+  `metric.batch_score(...)` / `metric.abatch_score(...)` directly (or use the experiment API).
+- **Don't use a synchronous OpenAI client for Ragas collections metrics** — these metrics call
+  async generation internally. With Ollama's OpenAI-compatible endpoint, use `AsyncOpenAI`
+  for judge LLM/embeddings clients to avoid errors like
+  `Cannot use agenerate() with a synchronous client`.
 - **Don't bake `chroma_db/` or `data/` into the Docker image** — vectors live in the
   `chroma_data` named volume and `data/` remains bind-mounted from the host.
   The `.dockerignore` excludes these paths.

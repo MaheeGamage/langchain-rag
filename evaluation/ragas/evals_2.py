@@ -1,15 +1,19 @@
 import os
 import sys
 import uuid
+from datetime import datetime
+from inspect import signature
 from pathlib import Path
 
-from openai import OpenAI
+import pandas as pd
+from openai import AsyncOpenAI, OpenAI
 from langchain_core.messages import AIMessage
 
-from ragas import Dataset, EvaluationDataset, SingleTurnSample, evaluate, experiment
+from ragas import EvaluationDataset, SingleTurnSample, experiment
+from ragas.embeddings import OpenAIEmbeddings
 from ragas.llms import llm_factory
-from ragas.metrics import (
-    DiscreteMetric,
+from ragas.metrics import DiscreteMetric
+from ragas.metrics.collections import (
     Faithfulness,
     AnswerRelevancy,
     ContextPrecision,
@@ -22,18 +26,149 @@ from ragas.metrics import (
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 from app.graph import graph
-from app.config import LLM_BASE_URL, JUDGE_LLM_MODEL
+from app.config import EMBEDDING_MODEL, LLM_BASE_URL, JUDGE_LLM_BASE_URL, JUDGE_LLM_MODEL
+
+
+def _normalize_base_url(base_url: str) -> str:
+    return base_url.rstrip("/")
+
+
+def _list_available_models(client: OpenAI) -> list[str]:
+    try:
+        return [model.id for model in client.models.list().data]
+    except Exception:
+        return []
+
+
+def _resolve_judge_model(configured_model: str | None, available_models: list[str]) -> str:
+    # Small models like tinyllama often fail strict JSON schema generation in Ragas metrics,
+    # so prefer stronger local models when available.
+    preferred_non_tiny = ["mistral:latest", "phi3.5:latest", "mistral", "phi3.5"]
+    available = set(available_models)
+
+    if available:
+        if configured_model and configured_model.startswith("tinyllama"):
+            for model in preferred_non_tiny:
+                if model in available:
+                    return model
+
+        candidates: list[str] = []
+        if configured_model:
+            candidates.append(configured_model)
+            if ":" not in configured_model:
+                candidates.append(f"{configured_model}:latest")
+
+        candidates.extend(preferred_non_tiny)
+        candidates.extend(["tinyllama:latest", "tinyllama"])
+
+        for model in candidates:
+            if model in available:
+                return model
+
+        return available_models[0]
+
+    if configured_model and not configured_model.startswith("tinyllama"):
+        return configured_model
+
+    return "mistral:latest"
+
+
+def _resolve_embedding_model(configured_model: str | None, available_models: list[str]) -> str:
+    available = set(available_models)
+
+    candidates: list[str] = []
+    if configured_model:
+        candidates.append(configured_model)
+        if ":" not in configured_model:
+            candidates.append(f"{configured_model}:latest")
+
+    candidates.extend(["nomic-embed-text:latest", "nomic-embed-text"])
+
+    if available:
+        for model in candidates:
+            if model in available:
+                return model
+
+    return configured_model or "nomic-embed-text:latest"
 
 # Create OpenAI-compatible client for Ollama (judge LLM)
-# Use the same base URL as your RAG agent
-ollama_client = OpenAI(
-    api_key="ollama",  # Ollama doesn't require a real key
-    base_url=f"{LLM_BASE_URL}/v1",  # Add /v1 for OpenAI-compatible endpoint
+# `EVAL_OLLAMA_BASE_URL` is script-specific and can override global settings.
+eval_ollama_base_url = _normalize_base_url(
+    os.getenv("EVAL_OLLAMA_BASE_URL")
+    or os.getenv("OLLAMA_BASE_URL")
+    or JUDGE_LLM_BASE_URL
+    or LLM_BASE_URL
+    or "http://localhost:11435"
 )
 
-# Use the judge model from config, fallback to phi3.5
-judge_model = JUDGE_LLM_MODEL or "phi3.5"
+model_probe_client = OpenAI(
+    api_key="ollama",  # Ollama doesn't require a real key
+    base_url=f"{eval_ollama_base_url}/v1",
+)
+
+ollama_client = AsyncOpenAI(
+    api_key="ollama",  # Ollama doesn't require a real key
+    base_url=f"{eval_ollama_base_url}/v1",
+)
+
+# Resolve a robust judge model from available local Ollama models.
+available_judge_models = _list_available_models(model_probe_client)
+judge_model = _resolve_judge_model(JUDGE_LLM_MODEL, available_judge_models)
+judge_embedding_model = _resolve_embedding_model(EMBEDDING_MODEL, available_judge_models)
+
+if judge_model != (JUDGE_LLM_MODEL or ""):
+    print(f"Using judge model '{judge_model}' (configured='{JUDGE_LLM_MODEL}')")
+
 judge_llm = llm_factory(judge_model, client=ollama_client)
+judge_embeddings = OpenAIEmbeddings(client=ollama_client, model=judge_embedding_model)
+
+
+def _evaluate_with_collections_metrics(dataset: EvaluationDataset) -> tuple[dict[str, float], pd.DataFrame]:
+    metrics = [
+        Faithfulness(llm=judge_llm),
+        AnswerRelevancy(llm=judge_llm, embeddings=judge_embeddings),
+        ContextPrecision(llm=judge_llm),
+        ContextRecall(llm=judge_llm),
+    ]
+
+    rows = [sample.model_dump(exclude_none=True) for sample in dataset.samples]
+
+    for metric in metrics:
+        required_args = [
+            name for name in signature(metric.ascore).parameters.keys() if name != "self"
+        ]
+
+        try:
+            metric_inputs = [
+                {arg: row[arg] for arg in required_args}
+                for row in rows
+            ]
+        except KeyError as exc:
+            missing = str(exc).strip("'\"")
+            for row in rows:
+                row[metric.name] = float("nan")
+                row[f"{metric.name}_error"] = f"Missing required field '{missing}'"
+            continue
+
+        try:
+            metric_results = metric.batch_score(metric_inputs)
+            for row, metric_result in zip(rows, metric_results):
+                row[metric.name] = metric_result.value
+        except Exception as exc:
+            for row in rows:
+                row[metric.name] = float("nan")
+                row[f"{metric.name}_error"] = f"{type(exc).__name__}: {exc}"
+
+    summary: dict[str, float] = {}
+    for metric in metrics:
+        values = [
+            row[metric.name]
+            for row in rows
+            if isinstance(row.get(metric.name), (int, float)) and row[metric.name] == row[metric.name]
+        ]
+        summary[metric.name] = sum(values) / len(values) if values else float("nan")
+
+    return summary, pd.DataFrame(rows)
 
 
 def rag_agent(question: str) -> str:
@@ -54,26 +189,20 @@ def rag_agent(question: str) -> str:
     return answer
 
 
-def load_dataset():
-    dataset = Dataset(
-        name="test_dataset",
-        backend="local/csv",
-        root_dir="evaluation/ragas/eval",
-    )
-
-    # 2. Build dataset (response filled in after RAG pipeline runs)
+def load_dataset() -> EvaluationDataset:
+    # Build a minimal single-turn dataset with real model output.
+    question = "How do I log circuit depth in MLflow?"
+    response = rag_agent(question)
     samples = [
         SingleTurnSample(
-            user_input="How do I log circuit depth in MLflow?",
+            user_input=question,
             retrieved_contexts=["<chunk from your FAISS index>"],
-            response="<what your RAG answered>",
+            response=response,
             reference="Use mlflow.log_metric('circuit_depth', circuit.depth())."
         ),
-        # ...
     ]
 
     dataset = EvaluationDataset(samples=samples)
-
 
     # data_samples = [
     #     # ── TYPE 1: Factual Lookup ─────────────────────────────────────────────
@@ -188,29 +317,21 @@ async def run_experiment(row):
     return experiment_view
 
 
-async def main():
+def main():
     dataset = load_dataset()
     print("dataset loaded successfully", dataset)
-    # experiment_results = await run_experiment.arun(dataset)
-    experiment_results = evaluate(
-        dataset=dataset,
-        metrics=[
-            Faithfulness(llm=judge_llm),
-            AnswerRelevancy(llm=judge_llm),
-            ContextPrecision(llm=judge_llm),
-            ContextRecall(llm=judge_llm),
-        ],
-    )
+
+    experiment_summary, results_df = _evaluate_with_collections_metrics(dataset)
     print("Experiment completed successfully!")
-    print("Experiment results:", experiment_results)
+    print("Experiment results:", experiment_summary)
 
     # Save experiment results to CSV
-    experiment_results.save()
-    csv_path = Path(".") / "experiments" / f"{experiment_results.name}.csv"
+    output_dir = PROJECT_ROOT / "evaluation" / "ragas" / "experiments"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = output_dir / f"evals_2_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    results_df.to_csv(csv_path, index=False)
     print(f"\nExperiment results saved to: {csv_path.resolve()}")
 
 
 if __name__ == "__main__":
-    import asyncio
-
-    asyncio.run(main())
+    main()
