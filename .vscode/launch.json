@@ -14,7 +14,7 @@
             "name": "Evaluate",
             "type": "debugpy",
             "request": "launch",
-            "module": "evaluation.evaluator",
+            "module": "evaluation.mlflow.evaluator",
             "python": "${workspaceFolder}/.venv/bin/python",
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
