@@ -4,6 +4,7 @@ import json
 import os
 from urllib import response
 import uuid
+from typing import Any
 import litellm
 
 # LiteLLM (used by MLflow judge) reads OLLAMA_API_BASE, not OLLAMA_BASE_URL.
@@ -25,7 +26,7 @@ from app.graph import graph
 # Use different env variable when using a different LLM provider
 mlflow.set_experiment("RAG Agent Evaluation 4")
 
-def rag_agent(question: str) -> str:
+def rag_agent(question: str) -> dict[str, Any]:
     config = {"configurable": {"thread_id": str(uuid.uuid4())}}
 
     result = graph.invoke(
@@ -39,10 +40,22 @@ def rag_agent(question: str) -> str:
             answer = m.content
             break
 
-    return answer
+    retrieved_context = [
+        entry.content
+        for entry in result.get("retrieved", [])
+        if getattr(entry, "content", None)
+    ]
+
+    # Keep an OpenAI-style chat payload so MLflow's built-in scorers read
+    # the answer text from `messages[-1].content` while still exposing context.
+    return {
+        "messages": [{"role": "assistant", "content": answer}],
+        "answer": answer,
+        "retrieved_context": retrieved_context,
+    }
 
 # Wrapper function for evaluation
-def qa_predict_fn(question: str) -> str:
+def qa_predict_fn(question: str) -> dict[str, Any]:
     response = rag_agent(question)
     return response
 
@@ -61,8 +74,12 @@ def load_eval_dataset(num_eval_questions: int | None = None):
 
 # Scorers
 @scorer
-def is_concise(outputs: str) -> bool:
-    return len(outputs.split()) <= 5
+def is_concise(outputs: Any) -> bool:
+    if isinstance(outputs, str):
+        answer_text = outputs
+    else:
+        answer_text = (outputs or {}).get("answer", "")
+    return len(answer_text.split()) <= 5
 
 scorers = [
     Correctness(model=get_judge_model_uri()),
@@ -73,6 +90,7 @@ scorers = [
 
 # Run evaluation
 if __name__ == "__main__":
+
     parser = argparse.ArgumentParser(
         description=(
             "Run evaluator on all questions or the first "
