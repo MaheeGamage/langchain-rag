@@ -3,7 +3,6 @@ import sys
 import uuid
 from pathlib import Path
 
-from openai import OpenAI
 from langchain_core.messages import AIMessage
 
 from ragas import Dataset, experiment
@@ -15,18 +14,14 @@ from ragas.metrics import DiscreteMetric
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 from app.graph import graph
-from app.config import LLM_BASE_URL, JUDGE_LLM_MODEL
+from app.config import JUDGE_LLM_MODEL
+from evaluation.ragas.judge_client import get_judge_client, resolve_judge_model
 
-# Create OpenAI-compatible client for Ollama (judge LLM)
-# Use the same base URL as your RAG agent
-ollama_client = OpenAI(
-    api_key="ollama",  # Ollama doesn't require a real key
-    base_url=f"{LLM_BASE_URL}/v1",  # Add /v1 for OpenAI-compatible endpoint
-)
+judge_client, judge_provider = get_judge_client()
 
 # Use the judge model from config, fallback to phi3.5
-judge_model = JUDGE_LLM_MODEL or "phi3.5"
-llm = llm_factory(judge_model, client=ollama_client)
+judge_model = resolve_judge_model(JUDGE_LLM_MODEL)
+llm = llm_factory(judge_model, provider=judge_provider, client=judge_client)
 
 
 def rag_agent(question: str) -> str:
@@ -78,13 +73,13 @@ def load_dataset():
                 "E3 — Number of Shots: The number of times the circuit is executed to build a statistical estimate of the output distribution. MLflow logging: mlflow.log_param('shots', 1024). Qiskit source: shots argument in sampler.run([circuit], shots=1024)."
             ],
         },
-        {
-            "question": "What Qiskit API should I use to get the circuit depth, and what MLflow call logs it?",
-            "grading_notes": "Use circuit.depth() to get the circuit depth in Qiskit. Log it with mlflow.log_metric('circuit_depth', circuit.depth()). Per QProv, depth is the maximum number of gates executed sequentially on any single qubit.",
-            "reference_contexts": [
-                "Q5 — Circuit Depth: MLflow logging: mlflow.log_metric('circuit_depth', circuit.depth()). Qiskit source: circuit.depth() returns an integer representing the number of gate layers."
-            ],
-        },
+        # {
+        #     "question": "What Qiskit API should I use to get the circuit depth, and what MLflow call logs it?",
+        #     "grading_notes": "Use circuit.depth() to get the circuit depth in Qiskit. Log it with mlflow.log_metric('circuit_depth', circuit.depth()). Per QProv, depth is the maximum number of gates executed sequentially on any single qubit.",
+        #     "reference_contexts": [
+        #         "Q5 — Circuit Depth: MLflow logging: mlflow.log_metric('circuit_depth', circuit.depth()). Qiskit source: circuit.depth() returns an integer representing the number of gate layers."
+        #     ],
+        # },
         # # ── TYPE 2: Conceptual Why ─────────────────────────────────────────────
         # {
         #     "question": "Why is it important to record decoherence times (T1 and T2) as part of quantum experiment provenance?",

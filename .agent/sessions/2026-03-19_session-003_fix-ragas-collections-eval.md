@@ -16,12 +16,18 @@ Fix runtime failures in evaluation/ragas/evals_2.py so it runs against local Oll
 - Replaced obsolete EvaluationResult.save() flow with pandas DataFrame CSV export to evaluation/ragas/experiments/evals_2_<timestamp>.csv.
 - Converted main entrypoint to synchronous execution so sync batch_score calls run outside async context.
 - Verified script execution end-to-end with numeric metric outputs.
+- Added rag_agent_with_context() in evaluation/ragas/evals_2.py and wired load_dataset() to pass actual retrieved chunks from graph.invoke(...) into SingleTurnSample.retrieved_contexts.
+- Verified retrieved_contexts runtime values are real chunks (count=4) and no placeholder marker remains.
+- Moved the commented QProv evaluation question set out of code into evaluation/ragas/eval/datasets/qprov_eval_questions.json.
+- Refactored evaluation/ragas/evals_2.py to load question rows from JSON, build samples for all rows, and map grading_notes/reference_contexts into SingleTurnSample.reference.
+- Added CLI controls: --questions-file for custom dataset path and --num-questions to limit how many questions are evaluated.
+- Verified loader behavior: external file found, total rows=10, and --num-questions style limiting returns expected subset sizes.
 - Updated AGENTS.md "What Not to Do" with two Ragas 0.4 pitfalls:
   - collections metrics are not valid inputs to ragas.evaluate()
   - collections metrics with OpenAI-compatible endpoints should use AsyncOpenAI clients
 
 ## Outcome
-evaluation/ragas/evals_2.py now runs successfully on Ollama at 11435, computes non-NaN metric scores, and saves CSV output without AttributeError. Deprecation warnings from legacy metric imports are removed.
+evaluation/ragas/evals_2.py now runs successfully on Ollama at 11435, computes non-NaN metric scores, saves CSV output without AttributeError, loads question prompts from an external JSON dataset with optional question limits, and uses actual retrieved context chunks in evaluation samples instead of placeholders. Deprecation warnings from legacy metric imports are removed.
 
 ## Agent
 GitHub Copilot (GPT-5.3-Codex)
