@@ -18,6 +18,7 @@ import mlflow
 from openai import OpenAI
 from mlflow.genai import scorer
 from mlflow.genai.scorers import Correctness, Guidelines
+from mlflow.genai.scorers.ragas import Faithfulness
 
 from app.config import LLM_MODEL, LLM_BASE_URL
 from app.factory import get_judge_model_uri
@@ -26,6 +27,7 @@ from app.graph import graph
 # Use different env variable when using a different LLM provider
 mlflow.set_experiment("RAG Agent Evaluation 4")
 
+@mlflow.trace
 def rag_agent(question: str) -> dict[str, Any]:
     config = {"configurable": {"thread_id": str(uuid.uuid4())}}
 
@@ -40,18 +42,17 @@ def rag_agent(question: str) -> dict[str, Any]:
             answer = m.content
             break
 
-    retrieved_context = [
+    retrieved_contexts = [
         entry.content
         for entry in result.get("retrieved", [])
         if getattr(entry, "content", None)
     ]
 
-    # Keep an OpenAI-style chat payload so MLflow's built-in scorers read
-    # the answer text from `messages[-1].content` while still exposing context.
+    # MLflow RAGAS scorers expect 'retrieved_contexts' in the outputs
+    # for Faithfulness and other retrieval-based metrics to work
     return {
-        "messages": [{"role": "assistant", "content": answer}],
-        "answer": answer,
-        "retrieved_context": retrieved_context,
+        "response": answer,
+        "retrieved_contexts": retrieved_contexts,
     }
 
 # Wrapper function for evaluation
@@ -82,8 +83,9 @@ def is_concise(outputs: Any) -> bool:
     return len(answer_text.split()) <= 5
 
 scorers = [
-    Correctness(model=get_judge_model_uri()),
-
+    # Correctness(model=get_judge_model_uri()),
+    Faithfulness(model=get_judge_model_uri()),
+    # ContextPrecision(model="openai:/gpt-4"),
     # Guidelines(name="is_english", guidelines="The answer must be in English"),
     # is_concise,
 ]
@@ -98,14 +100,14 @@ if __name__ == "__main__":
         )
     )
     parser.add_argument(
-        "--num-eval-questions",
+        "--max-q",
         type=int,
         default=None,
         help="Number of questions to evaluate from the beginning. Defaults to all.",
     )
     args = parser.parse_args()
 
-    eval_dataset = load_eval_dataset(args.num_eval_questions)
+    eval_dataset = load_eval_dataset(1) # for testing I set this to 1, change it to args.max_q
 
     results = mlflow.genai.evaluate(
         data=eval_dataset,
