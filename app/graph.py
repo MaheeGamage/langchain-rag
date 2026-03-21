@@ -11,6 +11,9 @@ from langchain_core.output_parsers import StrOutputParser
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langgraph.checkpoint.sqlite import SqliteSaver
+import mlflow
+from mlflow.entities import SpanType 
+
 from .retriever import get_retriever
 from .config import LLM_PROVIDER, LLM_MODEL, CONVERSATIONS_DB
 from .factory import get_llm
@@ -41,7 +44,7 @@ retriever = get_retriever()
 log.info("Using %s LLM: %s", LLM_PROVIDER, LLM_MODEL)
 llm = get_llm() | StrOutputParser()
 
-
+# @mlflow.trace(span_type=SpanType.RETRIEVER)
 def retrieve(state: RAGState):
     # Use the latest HumanMessage as the retrieval query
     query = next(

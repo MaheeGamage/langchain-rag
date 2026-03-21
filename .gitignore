@@ -55,3 +55,4 @@ knowledge_ingestion/content/refined-content
 # ── Evaluation outputs ─────────────────────────────────────────────────────────────
 evaluation/ragas/eval/
 evaluation/ragas/experiments/
+mlruns/

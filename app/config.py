@@ -53,6 +53,7 @@ _LLM_DEFAULTS: dict = {
     },
     "openai": {
         "model":   os.getenv("OPENAI_LLM_MODEL",  "gpt-4o-mini"),
+        "judge_model": os.getenv("OPENAI_JUDGE_LLM_MODEL", None),
         "api_key": os.getenv("OPENAI_API_KEY",    ""),
         "base_url": os.getenv("OPENAI_BASE_URL",  None),  # None = official endpoint
     },
