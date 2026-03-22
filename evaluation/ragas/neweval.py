@@ -21,12 +21,17 @@ from app.config import (
 from evaluation.ragas.ragas_factory import get_ragas_judge_llm, get_ragas_judge_embeddings
 
 
+EVAL_DATASET_PATH = os.path.abspath(
+    # os.path.join(os.path.dirname(__file__), "..", "mlflow", "eval_dataset.json")
+    os.path.join(os.path.dirname(__file__), "..", "eval_dataset.json")
+)
+MAX_Q_RAW = 1 #os.getenv("MAX_Q", "").strip()
+
+
 def load_eval_dataset() -> list[dict[str, str]]:
     """Load eval dataset and normalize to {'user_input', 'reference'} shape."""
-    dataset_path = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "mlflow", "eval_dataset.json")
-    )
-    MAX_Q_RAW = 1 #os.getenv("MAX_Q", "").strip()
+    dataset_path = EVAL_DATASET_PATH
+    
     max_q = int(MAX_Q_RAW) if MAX_Q_RAW else None
 
     with open(dataset_path, "r", encoding="utf-8") as f:
