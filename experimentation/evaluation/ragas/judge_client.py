@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from openai import OpenAI
+from openai import AsyncOpenAI, OpenAI
 
 from app.config import (
     JUDGE_LLM_MODEL,
@@ -78,3 +78,18 @@ def get_judge_client() -> tuple[OpenAI, str]:
         return OpenAI(api_key=JUDGE_LLM_API_KEY, base_url=base_url), "openai"
 
     raise ValueError(f"Unsupported JUDGE_PROVIDER: {JUDGE_PROVIDER!r}")
+
+
+def get_ragas_async_judge_setup(configured_model: str | None = None) -> tuple[AsyncOpenAI, str, str]:
+    """Return async client, provider, and model ready for ragas.llm_factory.
+
+    This helper is additive and does not change existing judge-client APIs.
+    """
+    client, provider = get_judge_client(async_client=True)
+    model = resolve_judge_model(configured_model)
+
+    # Keep a strict async return type for callers that use await-based metrics.
+    if not isinstance(client, AsyncOpenAI):
+        raise TypeError("Expected AsyncOpenAI client when async_client=True")
+
+    return client, provider, model

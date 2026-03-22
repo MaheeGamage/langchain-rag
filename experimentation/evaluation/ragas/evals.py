@@ -2,12 +2,15 @@ import os
 import sys
 import uuid
 from pathlib import Path
+from typing import Any
+import asyncio
 
 from langchain_core.messages import AIMessage
 
 from ragas import Dataset, experiment
 from ragas.llms import llm_factory
 from ragas.metrics import DiscreteMetric
+from ragas.metrics.collections import Faithfulness
 
 # Add project root to path to import app modules.
 # File: evaluation/ragas/evals.py -> repo root is three levels up.
@@ -15,17 +18,33 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 from app.graph import graph
 from app.config import JUDGE_LLM_MODEL
-from evaluation.ragas.judge_client import get_judge_client, resolve_judge_model
+from evaluation.ragas.judge_client import get_judge_client, get_ragas_async_judge_setup, resolve_judge_model
 
-judge_client, judge_provider = get_judge_client()
+judge_client, judge_provider = get_ragas_async_judge_setup()
 
 # Use the judge model from config, fallback to phi3.5
 judge_model = resolve_judge_model(JUDGE_LLM_MODEL)
 llm = llm_factory(judge_model, provider=judge_provider, client=judge_client)
 
 
-def rag_agent(question: str) -> str:
-    """Your RAG agent implementation"""
+# def rag_agent(question: str) -> str:
+#     """Your RAG agent implementation"""
+#     config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+
+#     result = graph.invoke(
+#         {"messages": question, "context": [], "retrieved": []},
+#         config=config,
+#     )
+
+#     answer = ""
+#     for m in reversed(result["messages"]):
+#         if isinstance(m, AIMessage):
+#             answer = m.content
+#             break
+
+#     return answer
+
+def rag_agent(question: str) -> dict[str, Any]:
     config = {"configurable": {"thread_id": str(uuid.uuid4())}}
 
     result = graph.invoke(
@@ -39,7 +58,19 @@ def rag_agent(question: str) -> str:
             answer = m.content
             break
 
-    return answer
+    retrieved_context = [
+        entry.content
+        for entry in result.get("retrieved", [])
+        if getattr(entry, "content", None)
+    ]
+
+    # Keep an OpenAI-style chat payload so MLflow's built-in scorers read
+    # the answer text from `messages[-1].content` while still exposing context.
+    return {
+        "messages": [{"role": "assistant", "content": answer}],
+        "answer": answer,
+        "retrieved_context": retrieved_context,
+    }
 
 
 def load_dataset():
@@ -158,21 +189,32 @@ my_metric = DiscreteMetric(
     allowed_values=["pass", "fail"],
 )
 
+metric_faithfulness = Faithfulness(llm=llm)
 
 @experiment()
 async def run_experiment(row):
+    question = row["question"]
     response = rag_agent(row["question"])
 
-    score = my_metric.score(
-        llm=llm,
-        response=response,
-        grading_notes=row["grading_notes"],
-    )
+    # score = my_metric.score(
+    #     llm=llm,
+    #     response=response["answer"],
+    #     grading_notes=row["grading_notes"],
+    # )
+
+    score_faith = metric_faithfulness.score(
+    user_input="When was the first super bowl?",
+    response="The first superbowl was held on Jan 15, 1967",
+    retrieved_contexts=[
+        "The First AFL–NFL World Championship Game was an American football game played on January 15, 1967, at the Los Angeles Memorial Coliseum in Los Angeles."
+    ]
+)
 
     experiment_view = {
         **row,
-        "response": response,
-        "score": score.value,
+        "answer": response["answer"],
+        # "score": score.value,
+        "faithfulness_score": score_faith.value,
     }
     return experiment_view
 
