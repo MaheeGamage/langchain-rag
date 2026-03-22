@@ -5,19 +5,20 @@ import asyncio
 import json
 import mlflow
 import pandas as pd
-from openai import AsyncOpenAI
 from ragas import EvaluationDataset, SingleTurnSample
-from ragas.embeddings import embedding_factory
-from ragas.llms import llm_factory
 from ragas.metrics.collections import Faithfulness, ContextPrecision, ContextRecall, AnswerRelevancy
 from langchain_core.messages import AIMessage
 
 # Add parent directory to path to import app modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from app.factory import get_judge_model_uri
 from app.graph import graph
-from app.config import LLM_MODEL, LLM_PROVIDER, EMBEDDING_MODEL, EMBEDDING_PROVIDER
+from app.config import (
+    LLM_MODEL, LLM_PROVIDER, 
+    EMBEDDING_MODEL, EMBEDDING_PROVIDER,
+    JUDGE_PROVIDER, JUDGE_EMBEDDING_PROVIDER,
+)
+from evaluation.ragas.ragas_factory import get_ragas_judge_llm, get_ragas_judge_embeddings
 
 
 def load_eval_dataset() -> list[dict[str, str]]:
@@ -80,6 +81,8 @@ eval_dataset = load_eval_dataset()
 
 print(f"Using {LLM_PROVIDER} LLM: {LLM_MODEL}")
 print(f"Using {EMBEDDING_PROVIDER} embeddings: {EMBEDDING_MODEL}")
+print(f"Using {JUDGE_PROVIDER} judge LLM for evaluation")
+print(f"Using {JUDGE_EMBEDDING_PROVIDER} judge embeddings for evaluation")
 print(f"Loaded {len(eval_dataset)} evaluation questions")
 print("Tip: set MAX_Q to limit questions, e.g. MAX_Q=3")
 print("\nRunning RAG on evaluation questions...")
@@ -107,12 +110,9 @@ for item in eval_dataset:
 
 ragas_dataset = EvaluationDataset(samples=samples)
 
-# ✅ Setup LLM for Ragas metrics using the collections API
-client = AsyncOpenAI()
-llm = llm_factory("gpt-4o-mini", client=client)
-
-embeddings = embedding_factory("openai", model="text-embedding-3-small", client=client)
-
+# Setup LLM and embeddings for Ragas metrics using configured judge providers
+llm = get_ragas_judge_llm()
+embeddings = get_ragas_judge_embeddings()
 
 # Initialize metrics
 faithfulness_metric = Faithfulness(llm=llm)
@@ -184,6 +184,8 @@ with mlflow.start_run():
         "llm_model": LLM_MODEL,
         "embedding_provider": EMBEDDING_PROVIDER,
         "embedding_model": EMBEDDING_MODEL,
+        "judge_provider": JUDGE_PROVIDER,
+        "judge_embedding_provider": JUDGE_EMBEDDING_PROVIDER,
         "ragas_version": "0.4.3",
         "num_samples": len(samples),
         "ragas_metrics": "faithfulness,context_precision,context_recall,answer_relevance",

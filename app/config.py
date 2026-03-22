@@ -28,11 +28,20 @@ def _parse_int(name: str, default: str) -> int:
 # Set these in .env.  They are fully independent — mix any combination.
 # LLM_PROVIDER       controls which service answers questions.
 # EMBEDDING_PROVIDER controls which service encodes text into vectors.
+# JUDGE_PROVIDER     controls which service is used for evaluation LLM.
+# JUDGE_EMBEDDING_PROVIDER controls which service is used for evaluation embeddings.
 LLM_PROVIDER:       str = os.getenv("LLM_PROVIDER",       "ollama")
 EMBEDDING_PROVIDER: str = os.getenv("EMBEDDING_PROVIDER", "ollama")
-JUDGE_PROVIDER: str = os.getenv("JUDGE_PROVIDER", "ollama")
+JUDGE_PROVIDER:     str = os.getenv("JUDGE_PROVIDER",     "ollama")
+# Default to JUDGE_PROVIDER if not explicitly set (backward compatibility)
+JUDGE_EMBEDDING_PROVIDER: str = os.getenv("JUDGE_EMBEDDING_PROVIDER", JUDGE_PROVIDER)
 
-for _p, _name in ((LLM_PROVIDER, "LLM_PROVIDER"), (EMBEDDING_PROVIDER, "EMBEDDING_PROVIDER"), (JUDGE_PROVIDER, "JUDGE_PROVIDER")):
+for _p, _name in (
+    (LLM_PROVIDER, "LLM_PROVIDER"),
+    (EMBEDDING_PROVIDER, "EMBEDDING_PROVIDER"),
+    (JUDGE_PROVIDER, "JUDGE_PROVIDER"),
+    (JUDGE_EMBEDDING_PROVIDER, "JUDGE_EMBEDDING_PROVIDER"),
+):
     if _p not in _VALID_PROVIDERS:
         raise ValueError(f"Unknown {_name}={_p!r}. Choose from: {list(_VALID_PROVIDERS)}")
 
@@ -48,18 +57,21 @@ _LLM_DEFAULTS: dict = {
     "ollama": {
         "model":   os.getenv("OLLAMA_LLM_MODEL",  "tinyllama"),
         "judge_model": os.getenv("OLLAMA_JUDGE_LLM_MODEL", None),
+        "judge_embedding_model": os.getenv("OLLAMA_JUDGE_EMBEDDING_MODEL", None),
         "api_key": None,
         "base_url": os.getenv("OLLAMA_BASE_URL",  "http://localhost:11434"),
     },
     "openai": {
         "model":   os.getenv("OPENAI_LLM_MODEL",  "gpt-4o-mini"),
         "judge_model": os.getenv("OPENAI_JUDGE_LLM_MODEL", None),
+        "judge_embedding_model": os.getenv("OPENAI_JUDGE_EMBEDDING_MODEL", None),
         "api_key": os.getenv("OPENAI_API_KEY",    ""),
         "base_url": os.getenv("OPENAI_BASE_URL",  None),  # None = official endpoint
     },
     "gemini": {
         "model":   os.getenv("GEMINI_LLM_MODEL",  "gemini-2.5-flash"),
         "judge_model": os.getenv("GEMINI_JUDGE_LLM_MODEL", None),
+        "judge_embedding_model": os.getenv("GEMINI_JUDGE_EMBEDDING_MODEL", None),
         "api_key": os.getenv("GEMINI_API_KEY",    ""),
         "base_url": None,
     },
@@ -96,11 +108,17 @@ EMBEDDING_MODEL:    str       = _emb["model"]
 EMBEDDING_API_KEY:  str | None = _emb["api_key"]
 EMBEDDING_BASE_URL: str | None = _emb["base_url"]
 
-# ── Resolved Judge values ─────────────────────────────────────────────────
+# ── Resolved Judge LLM values ────────────────────────────────────────────────
 _judge = _LLM_DEFAULTS[JUDGE_PROVIDER]
 JUDGE_LLM_MODEL: str | None = _judge.get("judge_model")
 JUDGE_LLM_API_KEY: str | None = _judge["api_key"]
 JUDGE_LLM_BASE_URL: str | None = _judge["base_url"]
+
+# ── Resolved Judge Embedding values ──────────────────────────────────────────
+_judge_emb = _LLM_DEFAULTS[JUDGE_EMBEDDING_PROVIDER]
+JUDGE_EMBEDDING_MODEL: str | None = _judge_emb.get("judge_embedding_model")
+JUDGE_EMBEDDING_API_KEY: str | None = _judge_emb["api_key"]
+JUDGE_EMBEDDING_BASE_URL: str | None = _judge_emb["base_url"]
 
 # ChromaDB collection is named after the embedding model so that embeddings
 # from different providers/models live in separate collections and are never
