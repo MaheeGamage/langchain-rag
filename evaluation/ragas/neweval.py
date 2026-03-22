@@ -6,7 +6,7 @@ import json
 import mlflow
 import pandas as pd
 from ragas import EvaluationDataset, SingleTurnSample
-from ragas.metrics.collections import Faithfulness, ContextPrecision, ContextRecall, AnswerRelevancy
+from ragas.metrics.collections import Faithfulness, ContextPrecision, ContextRecall, AnswerRelevancy, FactualCorrectness
 from langchain_core.messages import AIMessage
 
 # Add parent directory to path to import app modules
@@ -25,7 +25,7 @@ EVAL_DATASET_PATH = os.path.abspath(
     # os.path.join(os.path.dirname(__file__), "..", "mlflow", "eval_dataset.json")
     os.path.join(os.path.dirname(__file__), "..", "eval_dataset.json")
 )
-MAX_Q_RAW = None
+MAX_Q_RAW = 1
 
 
 def load_eval_dataset() -> list[dict[str, str]]:
@@ -124,6 +124,7 @@ faithfulness_metric = Faithfulness(llm=llm)
 answer_relevance_metric = AnswerRelevancy(llm=llm, embeddings=embeddings)
 context_precision_metric = ContextPrecision(llm=llm)
 context_recall_metric = ContextRecall(llm=llm)
+factual_correctness_metric = FactualCorrectness(llm=llm)
 
 print("Running RAGAS evaluation...")
 
@@ -154,6 +155,11 @@ async def evaluate_samples():
             reference=sample.reference,
             retrieved_contexts=sample.retrieved_contexts,
         )
+
+        factual_correctness_score = await factual_correctness_metric.ascore(
+            response=sample.response,
+            reference=sample.reference,
+        )
         
         results.append({
             "user_input": sample.user_input,
@@ -163,6 +169,7 @@ async def evaluate_samples():
             "context_precision": context_precision_score.value,
             "context_recall": context_recall_score.value,
             "answer_relevance": answer_relevance_score.value,
+            "factual_correctness": factual_correctness_score.value,
         })
     
     return results
@@ -171,7 +178,7 @@ async def evaluate_samples():
 results = asyncio.run(evaluate_samples())
 score_df = pd.DataFrame(results)
 print("\n=== Per-sample Scores ===")
-print(score_df[["user_input", "faithfulness", "context_precision", "context_recall", "answer_relevance"]].to_string(index=False))
+print(score_df[["user_input", "faithfulness", "context_precision", "context_recall", "answer_relevance", "factual_correctness"]].to_string(index=False))
 
 numeric_cols = score_df.select_dtypes(include="number").columns.tolist()
 mean_scores = score_df[numeric_cols].mean().to_dict()
@@ -192,6 +199,6 @@ with mlflow.start_run():
         "judge_embedding_provider": JUDGE_EMBEDDING_PROVIDER,
         "ragas_version": "0.4.3",
         "num_samples": len(samples),
-        "ragas_metrics": "faithfulness,context_precision,context_recall,answer_relevance",
+        "ragas_metrics": "faithfulness,context_precision,context_recall,answer_relevance,factual_correctness",
     })
     print("\nMetrics logged to MLflow ✓")
