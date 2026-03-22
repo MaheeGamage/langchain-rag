@@ -25,7 +25,7 @@ EVAL_DATASET_PATH = os.path.abspath(
     # os.path.join(os.path.dirname(__file__), "..", "mlflow", "eval_dataset.json")
     os.path.join(os.path.dirname(__file__), "..", "eval_dataset.json")
 )
-MAX_Q_RAW = 1 #os.getenv("MAX_Q", "").strip()
+MAX_Q_RAW = None
 
 
 def load_eval_dataset() -> list[dict[str, str]]:
@@ -179,7 +179,6 @@ print("\n=== Mean Scores ===")
 for k, v in mean_scores.items():
     print(f"  {k}: {v:.4f}")
 
-mlflow.set_experiment("RAG Faithfulness Evaluation - Real System")
 with mlflow.start_run():
     for metric_name, metric_value in mean_scores.items():
         mlflow.log_metric(metric_name, metric_value)

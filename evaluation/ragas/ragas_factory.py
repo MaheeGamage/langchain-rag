@@ -184,7 +184,8 @@ def get_ragas_judge_llm():
     
     # Ragas llm_factory expects model as first positional arg, provider as keyword
     # All providers use OpenAI-compatible endpoints (Ollama and Gemini via compatibility layer)
-    return llm_factory(model, provider="openai", client=client)
+    # Set max_tokens to 4096 to avoid truncation on long faithfulness evaluations
+    return llm_factory(model, provider="openai", client=client, max_tokens=4096)
 
 
 def get_ragas_judge_embeddings():
