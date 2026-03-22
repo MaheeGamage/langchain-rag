@@ -7,8 +7,9 @@ import mlflow
 import pandas as pd
 from openai import AsyncOpenAI
 from ragas import EvaluationDataset, SingleTurnSample
+from ragas.embeddings import embedding_factory
 from ragas.llms import llm_factory
-from ragas.metrics.collections import Faithfulness, ContextPrecision, ContextRecall
+from ragas.metrics.collections import Faithfulness, ContextPrecision, ContextRecall, AnswerRelevancy
 from langchain_core.messages import AIMessage
 
 # Add parent directory to path to import app modules
@@ -24,8 +25,8 @@ def load_eval_dataset() -> list[dict[str, str]]:
     dataset_path = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "mlflow", "eval_dataset.json")
     )
-    max_q_raw = 5 #os.getenv("MAX_Q", "").strip()
-    max_q = int(max_q_raw) if max_q_raw else None
+    MAX_Q_RAW = 1 #os.getenv("MAX_Q", "").strip()
+    max_q = int(MAX_Q_RAW) if MAX_Q_RAW else None
 
     with open(dataset_path, "r", encoding="utf-8") as f:
         raw_items = json.load(f)
@@ -110,8 +111,12 @@ ragas_dataset = EvaluationDataset(samples=samples)
 client = AsyncOpenAI()
 llm = llm_factory("gpt-4o-mini", client=client)
 
+embeddings = embedding_factory("openai", model="text-embedding-3-small", client=client)
+
+
 # Initialize metrics
 faithfulness_metric = Faithfulness(llm=llm)
+answer_relevance_metric = AnswerRelevancy(llm=llm, embeddings=embeddings)
 context_precision_metric = ContextPrecision(llm=llm)
 context_recall_metric = ContextRecall(llm=llm)
 
@@ -127,7 +132,12 @@ async def evaluate_samples():
             response=sample.response,
             retrieved_contexts=sample.retrieved_contexts,
         )
-        
+
+        answer_relevance_score = await answer_relevance_metric.ascore(
+            user_input=sample.user_input,
+            response=sample.response,
+        )
+
         context_precision_score = await context_precision_metric.ascore(
             user_input=sample.user_input,
             reference=sample.reference,
@@ -147,6 +157,7 @@ async def evaluate_samples():
             "faithfulness": faithfulness_score.value,
             "context_precision": context_precision_score.value,
             "context_recall": context_recall_score.value,
+            "answer_relevance": answer_relevance_score.value,
         })
     
     return results
@@ -155,7 +166,7 @@ async def evaluate_samples():
 results = asyncio.run(evaluate_samples())
 score_df = pd.DataFrame(results)
 print("\n=== Per-sample Scores ===")
-print(score_df[["user_input", "faithfulness", "context_precision", "context_recall"]].to_string(index=False))
+print(score_df[["user_input", "faithfulness", "context_precision", "context_recall", "answer_relevance"]].to_string(index=False))
 
 numeric_cols = score_df.select_dtypes(include="number").columns.tolist()
 mean_scores = score_df[numeric_cols].mean().to_dict()
@@ -175,6 +186,6 @@ with mlflow.start_run():
         "embedding_model": EMBEDDING_MODEL,
         "ragas_version": "0.4.3",
         "num_samples": len(samples),
-        "ragas_metrics": "faithfulness,context_precision,context_recall",
+        "ragas_metrics": "faithfulness,context_precision,context_recall,answer_relevance",
     })
     print("\nMetrics logged to MLflow ✓")
