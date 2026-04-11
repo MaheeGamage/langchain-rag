@@ -22,6 +22,7 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from openai import AsyncOpenAI
+from openai import OpenAI
 from ragas.llms import llm_factory
 from ragas.embeddings import OpenAIEmbeddings
 
@@ -39,6 +40,12 @@ from app.config import (
 
 # Gemini OpenAI-compatible endpoint for Ragas
 GEMINI_OPENAI_COMPAT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
+_OLLAMA_PREFERRED_JUDGE_MODELS = [
+    "mistral:latest",
+    "mistral",
+    "phi3.5:latest",
+    "phi3.5",
+]
 
 
 def _normalize_base_url(base_url: str | None) -> str:
@@ -51,6 +58,50 @@ def _ensure_v1_suffix(base_url: str) -> str:
     if base_url.endswith("/v1"):
         return base_url
     return f"{base_url}/v1"
+
+
+def _list_available_models(client: OpenAI) -> list[str]:
+    """Return model IDs advertised by a local OpenAI-compatible endpoint."""
+    try:
+        return [model.id for model in client.models.list().data]
+    except Exception:
+        return []
+
+
+def _resolve_ollama_judge_model(configured_model: str | None) -> str:
+    """Pick a judge model that is more reliable for structured-output scoring."""
+    probe_base_url = _ensure_v1_suffix(
+        _normalize_base_url(JUDGE_LLM_BASE_URL or "http://localhost:11434")
+    )
+    probe_client = OpenAI(api_key="ollama", base_url=probe_base_url)
+    available_models = set(_list_available_models(probe_client))
+
+    configured = (configured_model or "").strip()
+    candidates: list[str] = []
+
+    if configured:
+        candidates.append(configured)
+        if ":" not in configured:
+            candidates.append(f"{configured}:latest")
+
+    candidates.extend(_OLLAMA_PREFERRED_JUDGE_MODELS)
+    candidates.extend(["tinyllama:latest", "tinyllama", "llama3.1:8b", "llama3.1"])
+
+    if available_models:
+        for model in candidates:
+            if model in available_models and not model.startswith("tinyllama") and not model.startswith("llama3.1"):
+                return model
+
+        for model in candidates:
+            if model in available_models:
+                return model
+
+        return next(iter(available_models))
+
+    if configured and not configured.startswith("tinyllama") and not configured.startswith("llama3.1"):
+        return configured
+
+    return "phi3.5"
 
 
 def get_async_judge_llm_client() -> AsyncOpenAI:
@@ -138,6 +189,8 @@ def _resolve_judge_llm_model() -> str:
     model = (JUDGE_LLM_MODEL or "").strip()
     
     if model:
+        if provider == "ollama":
+            return _resolve_ollama_judge_model(model)
         return model
     
     # Provider-specific defaults when not configured
