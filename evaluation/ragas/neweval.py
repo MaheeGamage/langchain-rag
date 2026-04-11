@@ -23,7 +23,8 @@ from evaluation.ragas.ragas_factory import get_ragas_judge_llm, get_ragas_judge_
 
 EVAL_DATASET_PATH = os.path.abspath(
     # os.path.join(os.path.dirname(__file__), "..", "mlflow", "eval_dataset.json")
-    os.path.join(os.path.dirname(__file__), "..", "eval_dataset.json")
+    # os.path.join(os.path.dirname(__file__), "..", "eval_dataset.json")
+    os.path.join(os.path.dirname(__file__), "..", "question-sets", "qset-v1.json")
 )
 MAX_Q_RAW = 1
 
