@@ -19,6 +19,15 @@
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "subProcess": true
+        },
+        {
+            "name": "Ingest Pipeline",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "experimentation.ingestion.ingest",
+            "python": "${workspaceFolder}/.venv/bin/python",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal"
         }
     ]
 }
