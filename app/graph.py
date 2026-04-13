@@ -44,7 +44,7 @@ retriever = get_retriever()
 log.info("Using %s LLM: %s", LLM_PROVIDER, LLM_MODEL)
 llm = get_llm() | StrOutputParser()
 
-# @mlflow.trace(span_type=SpanType.RETRIEVER)
+@mlflow.trace(span_type=SpanType.RETRIEVER)
 def retrieve(state: RAGState):
     # Use the latest HumanMessage as the retrieval query
     query = next(
