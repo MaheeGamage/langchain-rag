@@ -24,7 +24,7 @@ and pass replacement stages:
 from pathlib import Path
 
 from app.config import DATA_ROOT
-from knowledge_ingestion.ingestion.pipeline import build_default_pipeline
+from knowledge_ingestion.ingest_v2.pipeline import build_default_pipeline
 
 
 def main() -> None:

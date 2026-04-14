@@ -26,7 +26,15 @@ EVAL_DATASET_PATH = os.path.abspath(
     # os.path.join(os.path.dirname(__file__), "..", "eval_dataset.json")
     os.path.join(os.path.dirname(__file__), "..", "question-sets", "qset-v2.json")
 )
-MAX_Q_RAW = 1
+MAX_Q_RAW = None
+
+ENABLED_RAGAS_METRICS = [
+    # "faithfulness",
+    # "context_precision",
+    # "context_recall",
+    # "answer_relevance",
+    # "factual_correctness",
+]
 
 
 def load_eval_dataset() -> list[dict[str, str]]:
@@ -135,6 +143,51 @@ context_precision_metric = ContextPrecision(llm=llm)
 context_recall_metric = ContextRecall(llm=llm)
 factual_correctness_metric = FactualCorrectness(llm=llm)
 
+metric_scorers = {
+    "faithfulness": lambda sample: faithfulness_metric.ascore(
+        user_input=sample.user_input,
+        response=sample.response,
+        retrieved_contexts=sample.retrieved_contexts,
+    ),
+    "answer_relevance": lambda sample: answer_relevance_metric.ascore(
+        user_input=sample.user_input,
+        response=sample.response,
+    ),
+    "context_precision": lambda sample: context_precision_metric.ascore(
+        user_input=sample.user_input,
+        reference=sample.reference,
+        retrieved_contexts=sample.retrieved_contexts,
+    ),
+    "context_recall": lambda sample: context_recall_metric.ascore(
+        user_input=sample.user_input,
+        reference=sample.reference,
+        retrieved_contexts=sample.retrieved_contexts,
+    ),
+    "factual_correctness": lambda sample: factual_correctness_metric.ascore(
+        response=sample.response,
+        reference=sample.reference,
+    ),
+}
+
+enabled_metric_names = []
+unknown_metrics = []
+for metric_name in ENABLED_RAGAS_METRICS:
+    if metric_name in metric_scorers:
+        enabled_metric_names.append(metric_name)
+    else:
+        unknown_metrics.append(metric_name)
+
+if unknown_metrics:
+    print(
+        "[warn] Ignoring unknown metric names in ENABLED_RAGAS_METRICS: "
+        + ", ".join(unknown_metrics)
+    )
+
+if not enabled_metric_names:
+    print("[info] No metrics enabled. Skipping RAGAS scoring and logging only per-sample outputs.")
+else:
+    print("Enabled metrics: " + ", ".join(enabled_metric_names))
+
 print("Running RAGAS evaluation...")
 
 # Evaluate each sample using the collections API
@@ -150,56 +203,15 @@ async def evaluate_samples():
     for record in sample_records:
         sample = record["sample"]
         # Score each metric independently so one failure does not abort evaluation.
-        faithfulness_score, faithfulness_error = await safe_ascore(
-            "faithfulness",
-            faithfulness_metric.ascore(
-                user_input=sample.user_input,
-                response=sample.response,
-                retrieved_contexts=sample.retrieved_contexts,
-            ),
-        )
-
-        answer_relevance_score, answer_relevance_error = await safe_ascore(
-            "answer_relevance",
-            answer_relevance_metric.ascore(
-                user_input=sample.user_input,
-                response=sample.response,
-            ),
-        )
-
-        context_precision_score, context_precision_error = await safe_ascore(
-            "context_precision",
-            context_precision_metric.ascore(
-                user_input=sample.user_input,
-                reference=sample.reference,
-                retrieved_contexts=sample.retrieved_contexts,
-            ),
-        )
-
-        context_recall_score, context_recall_error = await safe_ascore(
-            "context_recall",
-            context_recall_metric.ascore(
-                user_input=sample.user_input,
-                reference=sample.reference,
-                retrieved_contexts=sample.retrieved_contexts,
-            ),
-        )
-
-        factual_correctness_score, factual_correctness_error = await safe_ascore(
-            "factual_correctness",
-            factual_correctness_metric.ascore(
-                response=sample.response,
-                reference=sample.reference,
-            ),
-        )
-
-        metric_errors = {
-            "faithfulness": faithfulness_error,
-            "context_precision": context_precision_error,
-            "context_recall": context_recall_error,
-            "answer_relevance": answer_relevance_error,
-            "factual_correctness": factual_correctness_error,
-        }
+        metric_scores = {}
+        metric_errors = {}
+        for metric_name in enabled_metric_names:
+            score_value, score_error = await safe_ascore(
+                metric_name,
+                metric_scorers[metric_name](sample),
+            )
+            metric_scores[metric_name] = score_value
+            metric_errors[metric_name] = score_error
 
         failed_metrics = [name for name, err in metric_errors.items() if err]
         if failed_metrics:
@@ -212,13 +224,11 @@ async def evaluate_samples():
             "user_input": sample.user_input,
             "response": sample.response,
             "reference": sample.reference,
+            "retrieved_contexts": sample.retrieved_contexts or [],
+            "retrieved_context": "\n\n---\n\n".join(sample.retrieved_contexts or []),
             "subdomain": record["subdomain"],
             "question_class": record["question_class"],
-            "faithfulness": faithfulness_score,
-            "context_precision": context_precision_score,
-            "context_recall": context_recall_score,
-            "answer_relevance": answer_relevance_score,
-            "factual_correctness": factual_correctness_score,
+            **metric_scores,
             "metric_errors": {
                 k: v for k, v in metric_errors.items() if v is not None
             },
@@ -229,19 +239,13 @@ async def evaluate_samples():
 # Run async evaluation
 results = asyncio.run(evaluate_samples())
 score_df = pd.DataFrame(results)
-score_cols = [
-    "faithfulness",
-    "context_precision",
-    "context_recall",
-    "answer_relevance",
-    "factual_correctness",
-]
+score_cols = enabled_metric_names
 for col in score_cols:
     score_df[col] = pd.to_numeric(score_df[col], errors="coerce")
 
 print("\n=== Per-sample Scores ===")
-print(score_df[["user_input", "subdomain", "question_class", "faithfulness", "context_precision", "context_recall", "answer_relevance", "factual_correctness", 
-                ]].to_string(index=False))
+display_cols = ["user_input", "subdomain", "question_class"] + score_cols
+print(score_df[display_cols].to_string(index=False))
 
 mean_scores = score_df[score_cols].mean(skipna=True).to_dict()
 print("\n=== Mean Scores ===")
@@ -264,6 +268,6 @@ with mlflow.start_run():
         "judge_embedding_provider": JUDGE_EMBEDDING_PROVIDER,
         "ragas_version": "0.4.3",
         "num_samples": len(sample_records),
-        "ragas_metrics": "faithfulness,context_precision,context_recall,answer_relevance,factual_correctness",
+        "ragas_metrics": ",".join(enabled_metric_names),
     })
     print("\nMetrics logged to MLflow ✓")
