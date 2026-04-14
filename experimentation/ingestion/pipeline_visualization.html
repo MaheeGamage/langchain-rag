@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ingestion Pipeline Visualization</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #0f1117;
+    color: #e2e8f0;
+    min-height: 100vh;
+    padding: 32px 24px;
+  }
+  h1 {
+    text-align: center;
+    font-size: 1.6rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #f8fafc;
+    margin-bottom: 6px;
+  }
+  .subtitle {
+    text-align: center;
+    font-size: 0.82rem;
+    color: #64748b;
+    margin-bottom: 40px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  /* ── Top-level pipeline flow ── */
+  .pipeline-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    flex-wrap: nowrap;
+    margin-bottom: 12px;
+  }
+  .stage-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: #1e2433;
+    border: 1.5px solid #334155;
+    border-radius: 12px;
+    padding: 18px 22px 14px;
+    min-width: 140px;
+    position: relative;
+    transition: border-color 0.2s;
+  }
+  .stage-box:hover { border-color: #64748b; }
+  .stage-num {
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    opacity: 0.55;
+  }
+  .stage-icon { font-size: 1.7rem; margin-bottom: 6px; }
+  .stage-name {
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+  .stage-class {
+    font-size: 0.68rem;
+    color: #64748b;
+    margin-top: 3px;
+    font-family: 'Cascadia Code', 'Fira Mono', monospace;
+  }
+  .arrow {
+    display: flex;
+    align-items: center;
+    padding: 0 4px;
+    flex-shrink: 0;
+  }
+  .arrow svg { display: block; }
+  .flow-label {
+    text-align: center;
+    font-size: 0.7rem;
+    color: #475569;
+    font-family: 'Cascadia Code', 'Fira Mono', monospace;
+    margin-bottom: 36px;
+    letter-spacing: 0.03em;
+  }
+
+  /* colour accents per stage */
+  .s1 { border-color: #1d4ed8; }  .s1 .stage-num { color: #3b82f6; opacity: 1; }
+  .s2 { border-color: #0f766e; }  .s2 .stage-num { color: #14b8a6; opacity: 1; }
+  .s3 { border-color: #7c3aed; }  .s3 .stage-num { color: #a78bfa; opacity: 1; }
+  .s4 { border-color: #b45309; }  .s4 .stage-num { color: #f59e0b; opacity: 1; }
+
+  /* ── Detail cards grid ── */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 20px;
+    margin-bottom: 28px;
+  }
+  .card {
+    background: #1e2433;
+    border-radius: 12px;
+    border: 1px solid #2d3748;
+    overflow: hidden;
+  }
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 18px;
+    font-weight: 700;
+    font-size: 0.88rem;
+    letter-spacing: 0.03em;
+    border-bottom: 1px solid #2d3748;
+  }
+  .card-body { padding: 16px 18px; font-size: 0.82rem; line-height: 1.65; }
+
+  .h-blue  { background: #1e3a5f; color: #93c5fd; }
+  .h-teal  { background: #134e4a; color: #5eead4; }
+  .h-purple{ background: #3b1f6e; color: #c4b5fd; }
+  .h-amber { background: #451a03; color: #fcd34d; }
+  .h-slate { background: #1e293b; color: #94a3b8; }
+
+  /* tables inside cards */
+  table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  th {
+    text-align: left;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #64748b;
+    padding: 4px 8px 6px;
+    border-bottom: 1px solid #2d3748;
+  }
+  td {
+    padding: 5px 8px;
+    vertical-align: top;
+    font-size: 0.79rem;
+  }
+  tr:not(:last-child) td { border-bottom: 1px solid #1a2032; }
+  .tag {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 4px;
+    font-size: 0.68rem;
+    font-family: 'Cascadia Code', 'Fira Mono', monospace;
+    font-weight: 600;
+  }
+  .tag-blue   { background: #1e3a5f; color: #93c5fd; }
+  .tag-teal   { background: #134e4a; color: #5eead4; }
+  .tag-purple { background: #3b1f6e; color: #c4b5fd; }
+  .tag-amber  { background: #451a03; color: #fcd34d; }
+  .tag-rose   { background: #4c0519; color: #fda4af; }
+  .tag-green  { background: #14532d; color: #86efac; }
+  .tag-slate  { background: #1e293b; color: #94a3b8; }
+
+  code {
+    font-family: 'Cascadia Code', 'Fira Mono', monospace;
+    font-size: 0.78em;
+    background: #0f1117;
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: #a5f3fc;
+  }
+
+  /* ── Chunking strategy sub-diagram ── */
+  .strategy-flow {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .strategy-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .strategy-condition {
+    flex: 0 0 220px;
+    font-size: 0.75rem;
+    color: #94a3b8;
+    font-family: 'Cascadia Code', 'Fira Mono', monospace;
+    background: #0f1117;
+    border-radius: 6px;
+    padding: 6px 10px;
+    border: 1px solid #2d3748;
+  }
+  .strategy-name {
+    font-size: 0.78rem;
+    font-weight: 700;
+    padding: 6px 12px;
+    border-radius: 6px;
+    white-space: nowrap;
+  }
+  .priority-badge {
+    font-size: 0.6rem;
+    font-weight: 700;
+    background: #1e2433;
+    border: 1px solid #334155;
+    color: #64748b;
+    border-radius: 99px;
+    padding: 2px 7px;
+    flex-shrink: 0;
+  }
+
+  /* ── Metadata section ── */
+  .meta-flow {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .meta-stage {
+    border-radius: 8px;
+    padding: 10px 14px;
+    border: 1px solid #2d3748;
+  }
+  .meta-stage-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    opacity: 0.7;
+  }
+  .meta-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+
+  /* ── Config table ── */
+  .config-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 8px;
+  }
+  .config-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #0f1117;
+    border-radius: 6px;
+    padding: 7px 12px;
+    font-size: 0.75rem;
+    border: 1px solid #1e293b;
+  }
+  .config-key { color: #a5f3fc; font-family: 'Cascadia Code', 'Fira Mono', monospace; }
+  .config-val { color: #fcd34d; font-family: 'Cascadia Code', 'Fira Mono', monospace; font-size: 0.7rem; }
+
+  .section-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #475569;
+    margin: 32px 0 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #1e293b;
+  }
+
+  .mini-arrow { color: #475569; font-size: 1.1rem; }
+</style>
+</head>
+<body>
+
+<h1>Ingestion Pipeline</h1>
+<div class="subtitle">experimentation/ingestion · langchain-rag</div>
+
+<!-- ══════════════════════════════════════════
+     TOP FLOW
+══════════════════════════════════════════ -->
+<div class="pipeline-row">
+  <!-- Input -->
+  <div style="display:flex;flex-direction:column;align-items:center;gap:4px;margin-right:4px;">
+    <div style="font-size:1.5rem">📁</div>
+    <div style="font-size:0.72rem;color:#475569;text-align:center;">DATA_ROOT<br>directory</div>
+  </div>
+
+  <div class="arrow">
+    <svg width="36" height="16"><path d="M0 8 L28 8 M22 3 L30 8 L22 13" stroke="#334155" stroke-width="1.5" fill="none"/></svg>
+  </div>
+
+  <div class="stage-box s1">
+    <div class="stage-num">Stage 1</div>
+    <div class="stage-icon">🔍</div>
+    <div class="stage-name">Walker</div>
+    <div class="stage-class">WalkerStage</div>
+  </div>
+
+  <div class="arrow">
+    <svg width="36" height="16"><path d="M0 8 L28 8 M22 3 L30 8 L22 13" stroke="#334155" stroke-width="1.5" fill="none"/></svg>
+  </div>
+
+  <div class="stage-box s2">
+    <div class="stage-num">Stage 2</div>
+    <div class="stage-icon">📄</div>
+    <div class="stage-name">Parser</div>
+    <div class="stage-class">ParserStage</div>
+  </div>
+
+  <div class="arrow">
+    <svg width="36" height="16"><path d="M0 8 L28 8 M22 3 L30 8 L22 13" stroke="#334155" stroke-width="1.5" fill="none"/></svg>
+  </div>
+
+  <div class="stage-box s3">
+    <div class="stage-num">Stage 3</div>
+    <div class="stage-icon">✂️</div>
+    <div class="stage-name">Chunker</div>
+    <div class="stage-class">ChunkingStage</div>
+  </div>
+
+  <div class="arrow">
+    <svg width="36" height="16"><path d="M0 8 L28 8 M22 3 L30 8 L22 13" stroke="#334155" stroke-width="1.5" fill="none"/></svg>
+  </div>
+
+  <div class="stage-box s4">
+    <div class="stage-num">Stage 4</div>
+    <div class="stage-icon">🧠</div>
+    <div class="stage-name">Embedder</div>
+    <div class="stage-class">EmbedderStage</div>
+  </div>
+
+  <div class="arrow">
+    <svg width="36" height="16"><path d="M0 8 L28 8 M22 3 L30 8 L22 13" stroke="#334155" stroke-width="1.5" fill="none"/></svg>
+  </div>
+
+  <!-- Output -->
+  <div style="display:flex;flex-direction:column;align-items:center;gap:4px;margin-left:4px;">
+    <div style="font-size:1.5rem">🗄️</div>
+    <div style="font-size:0.72rem;color:#475569;text-align:center;">ChromaDB<br>Vector Store</div>
+  </div>
+</div>
+
+<div class="flow-label">
+  List[Path] &nbsp;→&nbsp; List[Document] &nbsp;→&nbsp; List[Document] (chunks) &nbsp;→&nbsp; embeddings + metadata
+</div>
+
+
+<!-- ══════════════════════════════════════════
+     STAGE DETAIL CARDS
+══════════════════════════════════════════ -->
+<div class="section-label">Stage Details</div>
+<div class="grid">
+
+  <!-- Stage 1: Walker -->
+  <div class="card">
+    <div class="card-header h-blue">🔍 &nbsp;Stage 1 — Walker</div>
+    <div class="card-body">
+      <p style="color:#94a3b8;margin-bottom:10px;">Recursively discovers files under <code>DATA_ROOT</code>, filters by extension and hidden status, returns a deterministically sorted <code>List[Path]</code>.</p>
+      <table>
+        <tr><th>Config</th><th>Default</th></tr>
+        <tr><td><code>skip_hidden</code></td><td><span class="tag tag-blue">True</span></td></tr>
+        <tr><td><code>skip_extensions</code></td><td><span class="tag tag-slate">.rst .json .csv .pack .idx .rev .sample</span></td></tr>
+      </table>
+      <div style="margin-top:12px;color:#64748b;font-size:0.75rem;">Output sorted for reproducible runs.</div>
+    </div>
+  </div>
+
+  <!-- Stage 2: Parser -->
+  <div class="card">
+    <div class="card-header h-teal">📄 &nbsp;Stage 2 — Parser</div>
+    <div class="card-body">
+      <p style="color:#94a3b8;margin-bottom:10px;">Routes each file to a format-specific parser; detects <code>source_corpus</code> from path keywords.</p>
+      <table>
+        <tr><th>Extension</th><th>Parser</th><th>Granularity</th></tr>
+        <tr>
+          <td><span class="tag tag-slate">.md .mdx</span></td>
+          <td><code>parse_mdx</code></td>
+          <td>1 doc / file</td>
+        </tr>
+        <tr>
+          <td><span class="tag tag-slate">.ipynb</span></td>
+          <td><code>parse_notebook</code></td>
+          <td>1 doc / cell</td>
+        </tr>
+        <tr>
+          <td><span class="tag tag-slate">.pdf</span></td>
+          <td><code>parse_pdf</code></td>
+          <td>1 doc / page</td>
+        </tr>
+        <tr>
+          <td><span class="tag tag-slate">.py</span></td>
+          <td><code>parse_python</code></td>
+          <td>AST nodes + docstrings</td>
+        </tr>
+      </table>
+      <div style="margin-top:12px;">
+        <div style="font-size:0.7rem;color:#64748b;margin-bottom:6px;">Corpus detection (path substring → label)</div>
+        <div style="display:flex;flex-wrap:wrap;gap:5px;">
+          <span class="tag tag-teal">mlflow</span>
+          <span class="tag tag-teal">qiskit</span>
+          <span class="tag tag-teal">qprov</span>
+          <span class="tag tag-teal">sample-quantum-circuit → sample</span>
+          <span class="tag tag-slate">unknown</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stage 3: Chunker -->
+  <div class="card" style="grid-column: span 2;">
+    <div class="card-header h-purple">✂️ &nbsp;Stage 3 — Chunker (Strategy Pattern)</div>
+    <div class="card-body">
+      <p style="color:#94a3b8;margin-bottom:14px;">Routes each <code>Document</code> to a specialised chunking strategy. Priority order (first match wins):</p>
+
+      <div class="strategy-flow">
+        <div class="strategy-row">
+          <span class="priority-badge">P1</span>
+          <div class="strategy-condition">doc.metadata["doc_type"] is set</div>
+          <span class="mini-arrow">→</span>
+          <span class="strategy-name tag-purple tag">Explicit override</span>
+        </div>
+        <div class="strategy-row">
+          <span class="priority-badge">P2</span>
+          <div class="strategy-condition">content_type == "code"</div>
+          <span class="mini-arrow">→</span>
+          <span class="strategy-name tag-rose tag">CodeChunkingStrategy</span>
+        </div>
+        <div class="strategy-row">
+          <span class="priority-badge">P3</span>
+          <div class="strategy-condition">corpus in {"paper", "orig_paper"}</div>
+          <span class="mini-arrow">→</span>
+          <span class="strategy-name tag-amber tag">PaperChunkingStrategy</span>
+        </div>
+        <div class="strategy-row">
+          <span class="priority-badge">P4</span>
+          <div class="strategy-condition">filename contains synthetic keywords</div>
+          <span class="mini-arrow">→</span>
+          <span class="strategy-name tag-green tag">SyntheticDocChunkingStrategy</span>
+        </div>
+        <div class="strategy-row">
+          <span class="priority-badge">P5</span>
+          <div class="strategy-condition">fallback</div>
+          <span class="mini-arrow">→</span>
+          <span class="strategy-name tag-teal tag">NarrativeChunkingStrategy</span>
+        </div>
+      </div>
+
+      <div style="margin-top:20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">
+
+        <div style="background:#0f1117;border-radius:8px;padding:12px;border:1px solid #2d3748;">
+          <div style="font-size:0.72rem;font-weight:700;color:#5eead4;margin-bottom:8px;">Narrative</div>
+          <div style="font-size:0.75rem;color:#94a3b8;line-height:1.6;">
+            Pass 1: <code>MarkdownHeaderTextSplitter</code> on H1/H2/H3<br>
+            Pass 2: <code>RecursiveCharacterTextSplitter</code> if section &gt; chunk_size<br>
+            Adds <code>section</code>, <code>h1/h2/h3</code> metadata
+          </div>
+        </div>
+
+        <div style="background:#0f1117;border-radius:8px;padding:12px;border:1px solid #2d3748;">
+          <div style="font-size:0.72rem;font-weight:700;color:#fda4af;margin-bottom:8px;">Code</div>
+          <div style="font-size:0.75rem;color:#94a3b8;line-height:1.6;">
+            Pass-through if ≤ chunk_size<br>
+            Otherwise: split on <code>\ndef</code> / <code>\nclass</code> boundaries<br>
+            Preserves whole functions/classes
+          </div>
+        </div>
+
+        <div style="background:#0f1117;border-radius:8px;padding:12px;border:1px solid #2d3748;">
+          <div style="font-size:0.72rem;font-weight:700;color:#fcd34d;margin-bottom:8px;">Paper</div>
+          <div style="font-size:0.75rem;color:#94a3b8;line-height:1.6;">
+            Finds abstract section<br>
+            Prepends abstract to every other chunk<br>
+            Adds <code>abstract_prefixed: True</code> metadata<br>
+            Fallback → Narrative if no abstract
+          </div>
+        </div>
+
+        <div style="background:#0f1117;border-radius:8px;padding:12px;border:1px solid #2d3748;">
+          <div style="font-size:0.72rem;font-weight:700;color:#86efac;margin-bottom:8px;">Synthetic</div>
+          <div style="font-size:0.75rem;color:#94a3b8;line-height:1.6;">
+            Sliding window with 20% overlap<br>
+            Higher overlap preserves cross-domain context<br>
+            Used for bridge / taxonomy docs
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Stage 4: Embedder -->
+  <div class="card">
+    <div class="card-header h-amber">🧠 &nbsp;Stage 4 — Embedder</div>
+    <div class="card-body">
+      <p style="color:#94a3b8;margin-bottom:10px;">Batch-embeds chunks and upserts to ChromaDB with MD5-based deduplication and per-document error recovery.</p>
+      <table>
+        <tr><th>Feature</th><th>Detail</th></tr>
+        <tr><td>Deduplication</td><td><code>md5(content)</code> → skip seen IDs</td></tr>
+        <tr><td>Batch size</td><td><code>BATCH_SIZE = 25</code></td></tr>
+        <tr><td>Error recovery</td><td>batch fail → retry per-doc</td></tr>
+        <tr><td>Collection</td><td>named from embedding model</td></tr>
+        <tr><td>Transport</td><td>HTTP / HTTPS ChromaDB client</td></tr>
+      </table>
+      <div style="margin-top:12px;">
+        <div style="font-size:0.7rem;color:#64748b;margin-bottom:6px;">Supported providers</div>
+        <div style="display:flex;gap:6px;">
+          <span class="tag tag-amber">ollama</span>
+          <span class="tag tag-amber">openai</span>
+          <span class="tag tag-amber">gemini</span>
+        </div>
+      </div>
+      <div style="margin-top:10px;font-size:0.72rem;color:#64748b;">
+        Output: <code>{ added, skipped, failed }</code>
+      </div>
+    </div>
+  </div>
+
+  <!-- Parser internals -->
+  <div class="card">
+    <div class="card-header h-teal">🔬 &nbsp;Parser — Format Details</div>
+    <div class="card-body">
+      <table>
+        <tr><th>Parser</th><th>Technique</th><th>content_type</th></tr>
+        <tr>
+          <td><code>parse_mdx</code></td>
+          <td>YAML frontmatter + JSX strip</td>
+          <td><span class="tag tag-teal">narrative</span></td>
+        </tr>
+        <tr>
+          <td><code>parse_notebook</code></td>
+          <td>JSON cell split</td>
+          <td><span class="tag tag-teal">narrative</span> <span class="tag tag-rose">code</span></td>
+        </tr>
+        <tr>
+          <td><code>parse_python</code></td>
+          <td>AST nodes + docstrings</td>
+          <td><span class="tag tag-teal">narrative</span> <span class="tag tag-rose">code</span></td>
+        </tr>
+        <tr>
+          <td><code>parse_pdf</code></td>
+          <td>PyPDFLoader per page</td>
+          <td><span class="tag tag-teal">narrative</span></td>
+        </tr>
+      </table>
+    </div>
+  </div>
+
+</div><!-- /grid -->
+
+
+<!-- ══════════════════════════════════════════
+     METADATA FLOW
+══════════════════════════════════════════ -->
+<div class="section-label">Metadata Propagation</div>
+
+<div class="card" style="margin-bottom:28px;">
+  <div class="card-body">
+    <div class="meta-flow">
+
+      <div class="meta-stage" style="border-color:#1d4ed8;background:#0d1f3c;">
+        <div class="meta-stage-label" style="color:#3b82f6;">After Walker</div>
+        <div class="meta-tags">
+          <span class="tag tag-blue">Path objects</span>
+          <span class="tag tag-blue">sorted</span>
+          <span class="tag tag-blue">filtered</span>
+        </div>
+      </div>
+
+      <div style="padding-left:20px;color:#334155;font-size:1rem;">↓</div>
+
+      <div class="meta-stage" style="border-color:#0f766e;background:#0a2825;">
+        <div class="meta-stage-label" style="color:#14b8a6;">After Parser</div>
+        <div class="meta-tags">
+          <span class="tag tag-teal">source_file</span>
+          <span class="tag tag-teal">format</span>
+          <span class="tag tag-teal">content_type</span>
+          <span class="tag tag-teal">source_corpus</span>
+          <span class="tag tag-slate">title</span>
+          <span class="tag tag-slate">description</span>
+          <span class="tag tag-slate">page (PDF)</span>
+          <span class="tag tag-slate">cell_index (notebook)</span>
+          <span class="tag tag-slate">symbol (Python)</span>
+        </div>
+      </div>
+
+      <div style="padding-left:20px;color:#334155;font-size:1rem;">↓</div>
+
+      <div class="meta-stage" style="border-color:#7c3aed;background:#1d1140;">
+        <div class="meta-stage-label" style="color:#a78bfa;">After Chunker</div>
+        <div class="meta-tags">
+          <span class="tag tag-teal">source_file</span>
+          <span class="tag tag-teal">format</span>
+          <span class="tag tag-teal">content_type</span>
+          <span class="tag tag-teal">source_corpus</span>
+          <span class="tag tag-purple">section</span>
+          <span class="tag tag-purple">h1 / h2 / h3</span>
+          <span class="tag tag-amber">abstract_prefixed</span>
+          <span class="tag tag-slate">+ all parser fields</span>
+        </div>
+      </div>
+
+      <div style="padding-left:20px;color:#334155;font-size:1rem;">↓</div>
+
+      <div class="meta-stage" style="border-color:#b45309;background:#2b1500;">
+        <div class="meta-stage-label" style="color:#f59e0b;">In ChromaDB</div>
+        <div class="meta-tags">
+          <span class="tag tag-amber">vector embedding</span>
+          <span class="tag tag-amber">all metadata fields</span>
+          <span class="tag tag-amber">md5 chunk ID</span>
+          <span class="tag tag-amber">collection = model name</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════
+     CONFIGURATION
+══════════════════════════════════════════ -->
+<div class="section-label">Configuration Reference</div>
+
+<div class="card" style="margin-bottom:40px;">
+  <div class="card-body">
+    <div class="config-grid">
+      <div class="config-row"><span class="config-key">DATA_ROOT</span><span class="config-val">./refined-content</span></div>
+      <div class="config-row"><span class="config-key">CHUNK_SIZE</span><span class="config-val">2000</span></div>
+      <div class="config-row"><span class="config-key">CHUNK_OVERLAP</span><span class="config-val">200</span></div>
+      <div class="config-row"><span class="config-key">BATCH_SIZE</span><span class="config-val">25</span></div>
+      <div class="config-row"><span class="config-key">EMBEDDING_PROVIDER</span><span class="config-val">ollama | openai | gemini</span></div>
+      <div class="config-row"><span class="config-key">EMBEDDING_MODEL</span><span class="config-val">nomic-embed-text (ollama)</span></div>
+      <div class="config-row"><span class="config-key">CHROMA_HOST</span><span class="config-val">localhost</span></div>
+      <div class="config-row"><span class="config-key">CHROMA_PORT</span><span class="config-val">8001</span></div>
+      <div class="config-row"><span class="config-key">CHROMA_SSL</span><span class="config-val">false</span></div>
+      <div class="config-row"><span class="config-key">COLLECTION_NAME</span><span class="config-val">← sanitised model name</span></div>
+    </div>
+  </div>
+</div>
+
+<div style="text-align:center;font-size:0.68rem;color:#334155;padding-bottom:24px;">
+  IngestPipeline · pipeline/pipeline.py · all stages injected via dataclass fields · any stage is swappable
+</div>
+
+</body>
+</html>

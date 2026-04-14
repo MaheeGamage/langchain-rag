@@ -24,7 +24,7 @@ from evaluation.ragas.ragas_factory import get_ragas_judge_llm, get_ragas_judge_
 EVAL_DATASET_PATH = os.path.abspath(
     # os.path.join(os.path.dirname(__file__), "..", "mlflow", "eval_dataset.json")
     # os.path.join(os.path.dirname(__file__), "..", "eval_dataset.json")
-    os.path.join(os.path.dirname(__file__), "..", "question-sets", "qset-v1.json")
+    os.path.join(os.path.dirname(__file__), "..", "question-sets", "qset-v2.json")
 )
 MAX_Q_RAW = 1
 
@@ -42,11 +42,15 @@ def load_eval_dataset() -> list[dict[str, str]]:
     for item in raw_items:
         question = item.get("inputs", {}).get("question")
         reference = item.get("expectations", {}).get("expected_response")
+        subdomain = item.get("subdomain")
+        question_class = item.get("q_class")
 
         if question and reference:
             normalized.append({
                 "user_input": question,
                 "reference": reference,
+                "subdomain": subdomain,
+                "question_class": question_class,
             })
 
     if max_q is not None:
@@ -94,27 +98,31 @@ print("Tip: set MAX_Q to limit questions, e.g. MAX_Q=3")
 print("\nRunning RAG on evaluation questions...")
 
 # Build samples by running RAG for each question
-samples = []
+sample_records = []
 for item in eval_dataset:
     question = item["user_input"]
     reference = item["reference"]
-    
+    subdomain = item["subdomain"]
+    question_class = item["question_class"]
+
     result = run_rag(question)
     
     print(f"  Q: {question}")
     print(f"  A: {result['response']}")
     print(f"  Retrieved {len(result['retrieved_contexts'])} contexts\n")
     
-    samples.append(
-        SingleTurnSample(
+    sample_records.append({
+        "sample": SingleTurnSample(
             user_input=question,
             response=result["response"],
             retrieved_contexts=result["retrieved_contexts"],
             reference=reference,
-        )
-    )
+        ),
+        "subdomain": subdomain,
+        "question_class": question_class,
+    })
 
-ragas_dataset = EvaluationDataset(samples=samples)
+ragas_dataset = EvaluationDataset(samples=[record["sample"] for record in sample_records])
 
 # Setup LLM and embeddings for Ragas metrics using configured judge providers
 llm = get_ragas_judge_llm()
@@ -131,46 +139,89 @@ print("Running RAGAS evaluation...")
 
 # Evaluate each sample using the collections API
 async def evaluate_samples():
+    async def safe_ascore(metric_name: str, coro):
+        try:
+            score = await coro
+            return score.value, None
+        except Exception as e:
+            return None, f"{type(e).__name__}: {e}"
+
     results = []
-    for sample in samples:
-        # Score each metric for this sample
-        faithfulness_score = await faithfulness_metric.ascore(
-            user_input=sample.user_input,
-            response=sample.response,
-            retrieved_contexts=sample.retrieved_contexts,
+    for record in sample_records:
+        sample = record["sample"]
+        # Score each metric independently so one failure does not abort evaluation.
+        faithfulness_score, faithfulness_error = await safe_ascore(
+            "faithfulness",
+            faithfulness_metric.ascore(
+                user_input=sample.user_input,
+                response=sample.response,
+                retrieved_contexts=sample.retrieved_contexts,
+            ),
         )
 
-        answer_relevance_score = await answer_relevance_metric.ascore(
-            user_input=sample.user_input,
-            response=sample.response,
+        answer_relevance_score, answer_relevance_error = await safe_ascore(
+            "answer_relevance",
+            answer_relevance_metric.ascore(
+                user_input=sample.user_input,
+                response=sample.response,
+            ),
         )
 
-        context_precision_score = await context_precision_metric.ascore(
-            user_input=sample.user_input,
-            reference=sample.reference,
-            retrieved_contexts=sample.retrieved_contexts,
-        )
-        
-        context_recall_score = await context_recall_metric.ascore(
-            user_input=sample.user_input,
-            reference=sample.reference,
-            retrieved_contexts=sample.retrieved_contexts,
+        context_precision_score, context_precision_error = await safe_ascore(
+            "context_precision",
+            context_precision_metric.ascore(
+                user_input=sample.user_input,
+                reference=sample.reference,
+                retrieved_contexts=sample.retrieved_contexts,
+            ),
         )
 
-        factual_correctness_score = await factual_correctness_metric.ascore(
-            response=sample.response,
-            reference=sample.reference,
+        context_recall_score, context_recall_error = await safe_ascore(
+            "context_recall",
+            context_recall_metric.ascore(
+                user_input=sample.user_input,
+                reference=sample.reference,
+                retrieved_contexts=sample.retrieved_contexts,
+            ),
         )
+
+        factual_correctness_score, factual_correctness_error = await safe_ascore(
+            "factual_correctness",
+            factual_correctness_metric.ascore(
+                response=sample.response,
+                reference=sample.reference,
+            ),
+        )
+
+        metric_errors = {
+            "faithfulness": faithfulness_error,
+            "context_precision": context_precision_error,
+            "context_recall": context_recall_error,
+            "answer_relevance": answer_relevance_error,
+            "factual_correctness": factual_correctness_error,
+        }
+
+        failed_metrics = [name for name, err in metric_errors.items() if err]
+        if failed_metrics:
+            print(
+                f"[warn] Metric failures for question: {sample.user_input[:80]}"
+                f"... -> {', '.join(failed_metrics)}"
+            )
         
         results.append({
             "user_input": sample.user_input,
             "response": sample.response,
             "reference": sample.reference,
-            "faithfulness": faithfulness_score.value,
-            "context_precision": context_precision_score.value,
-            "context_recall": context_recall_score.value,
-            "answer_relevance": answer_relevance_score.value,
-            "factual_correctness": factual_correctness_score.value,
+            "subdomain": record["subdomain"],
+            "question_class": record["question_class"],
+            "faithfulness": faithfulness_score,
+            "context_precision": context_precision_score,
+            "context_recall": context_recall_score,
+            "answer_relevance": answer_relevance_score,
+            "factual_correctness": factual_correctness_score,
+            "metric_errors": {
+                k: v for k, v in metric_errors.items() if v is not None
+            },
         })
     
     return results
@@ -178,14 +229,27 @@ async def evaluate_samples():
 # Run async evaluation
 results = asyncio.run(evaluate_samples())
 score_df = pd.DataFrame(results)
-print("\n=== Per-sample Scores ===")
-print(score_df[["user_input", "faithfulness", "context_precision", "context_recall", "answer_relevance", "factual_correctness"]].to_string(index=False))
+score_cols = [
+    "faithfulness",
+    "context_precision",
+    "context_recall",
+    "answer_relevance",
+    "factual_correctness",
+]
+for col in score_cols:
+    score_df[col] = pd.to_numeric(score_df[col], errors="coerce")
 
-numeric_cols = score_df.select_dtypes(include="number").columns.tolist()
-mean_scores = score_df[numeric_cols].mean().to_dict()
+print("\n=== Per-sample Scores ===")
+print(score_df[["user_input", "subdomain", "question_class", "faithfulness", "context_precision", "context_recall", "answer_relevance", "factual_correctness", 
+                ]].to_string(index=False))
+
+mean_scores = score_df[score_cols].mean(skipna=True).to_dict()
 print("\n=== Mean Scores ===")
 for k, v in mean_scores.items():
-    print(f"  {k}: {v:.4f}")
+    if pd.isna(v):
+        print(f"  {k}: N/A (all samples failed)")
+    else:
+        print(f"  {k}: {v:.4f}")
 
 with mlflow.start_run():
     for metric_name, metric_value in mean_scores.items():
@@ -199,7 +263,7 @@ with mlflow.start_run():
         "judge_provider": JUDGE_PROVIDER,
         "judge_embedding_provider": JUDGE_EMBEDDING_PROVIDER,
         "ragas_version": "0.4.3",
-        "num_samples": len(samples),
+        "num_samples": len(sample_records),
         "ragas_metrics": "faithfulness,context_precision,context_recall,answer_relevance,factual_correctness",
     })
     print("\nMetrics logged to MLflow ✓")
