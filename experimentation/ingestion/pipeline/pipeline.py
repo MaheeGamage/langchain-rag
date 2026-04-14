@@ -23,6 +23,7 @@ Usage
     pipeline.run(data_root=Path("./knowledge_ingestion/content"))
 """
 
+import json
 import logging
 import time
 from collections import Counter
@@ -63,7 +64,7 @@ class IngestPipeline:
     chunker:  ChunkingStage = field(default_factory=ChunkingStage)
     embedder: EmbedderStage = field(default_factory=EmbedderStage)
 
-    def run(self, data_root: Path) -> None:
+    def run(self, data_root: Path, debug_output_dir: Path | None = None) -> None:
         log = _setup_logger()
         t_start = time.time()
 
@@ -103,6 +104,10 @@ class IngestPipeline:
             print("    ⚠  No documents to ingest.  Check DATA_ROOT and file types.")
             return
 
+        # ── Debug: save parsed PDF docs to JSON ───────────────────────────────
+        if debug_output_dir is not None:
+            self._save_parsed_debug(raw_docs, debug_output_dir, log)
+
         # ── Stage 3: Chunk ────────────────────────────────────────────────────
         print("[3/4] Chunking ...")
         chunks = self.chunker.run(raw_docs)
@@ -135,6 +140,46 @@ class IngestPipeline:
         print(f"\n    ✓ {summary}")
         print(f"    Log: {LOG_FILE}")
         log.info(summary)
+
+
+    # ── Debug helpers ─────────────────────────────────────────────────────────
+
+    def _save_parsed_debug(
+        self,
+        raw_docs: list,
+        output_dir: Path,
+        log: logging.Logger,
+    ) -> None:
+        """
+        Save parsed documents grouped by format to <output_dir>/parsed_<format>.json.
+
+        Each file is a JSON array of objects:
+            { "metadata": {...}, "page_content": "..." }
+
+        Currently filters to "pdf" format only, but you can remove or change
+        the filter to inspect other formats.
+        """
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Group by format — change this filter to see other formats
+        target_format = "pdf"
+        pdf_docs = [d for d in raw_docs if d.metadata.get("format") == target_format]
+
+        # If you later want to inspect other formats too, just change target_format = "pdf" in _save_parsed_debug to "md", "py", "ipynb", etc. — or remove the filter entirely to dump everything.
+
+        if not pdf_docs:
+            print(f"    ℹ  debug_output_dir set but no '{target_format}' docs found.")
+            return
+
+        out_path = output_dir / f"parsed_{target_format}.json"
+        payload = [
+            {"metadata": doc.metadata, "page_content": doc.page_content}
+            for doc in pdf_docs
+        ]
+        out_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+
+        print(f"    💾 Saved {len(pdf_docs):,} parsed PDF docs → {out_path}")
+        log.info(f"Debug: wrote {len(pdf_docs)} PDF docs to {out_path}")
 
 
 def build_default_pipeline(

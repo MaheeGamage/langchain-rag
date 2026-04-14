@@ -29,7 +29,10 @@ from experimentation.ingestion.pipeline import build_default_pipeline
 
 def main() -> None:
     pipeline = build_default_pipeline()
-    pipeline.run(data_root=Path(DATA_ROOT))
+    pipeline.run(
+        data_root=Path(DATA_ROOT),
+        # debug_output_dir=Path("./debug_output")
+    )
 
 
 if __name__ == "__main__":

@@ -20,6 +20,7 @@ Strategy rationale (from rag_embedding_strategy.md)
   code        → size-only split respecting def/class boundaries
   synthetic   → sliding window with generous overlap (cross-domain docs)
   paper       → abstract-prefixed section chunks (parent-doc pattern)
+  simple_text → flat sliding-window split by chunk size and overlap only
 """
 
 from __future__ import annotations
@@ -159,6 +160,38 @@ class SyntheticDocChunkingStrategy(ChunkingStrategy):
             chunk_size=chunk_size,
             chunk_overlap=overlap,
             separators=["\n\n", "\n", ". ", " ", ""],
+        )
+
+    def chunk(self, doc: Document) -> list[Document]:
+        if len(doc.page_content) <= self._splitter._chunk_size:
+            return [doc]
+        return [
+            Document(page_content=text, metadata=doc.metadata)
+            for text in self._splitter.split_text(doc.page_content)
+        ]
+
+
+class PlainTextChunkingStrategy(ChunkingStrategy):
+    """
+    Simple size-and-overlap split with no structural awareness.
+
+    Splits the raw text purely by character count using CHUNK_SIZE and
+    CHUNK_OVERLAP from config.  No heading detection, no separator
+    hierarchy — just a flat sliding window over the full document text.
+
+    Use this for plain .txt files, unstructured blobs, or any document
+    where markdown/code structure should be ignored.
+    """
+
+    def __init__(
+        self,
+        chunk_size: int = CHUNK_SIZE,
+        chunk_overlap: int = CHUNK_OVERLAP,
+    ) -> None:
+        self._splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            separators=["\n\n", "\n", " ", ""],
         )
 
     def chunk(self, doc: Document) -> list[Document]:

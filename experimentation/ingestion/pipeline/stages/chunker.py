@@ -24,6 +24,7 @@ from ..strategies.chunking import (
     CodeChunkingStrategy,
     SyntheticDocChunkingStrategy,
     PaperChunkingStrategy,
+    PlainTextChunkingStrategy,
 )
 
 # ── Corpus names that should use the paper strategy ───────────────────────────
@@ -54,6 +55,7 @@ class ChunkingStage:
             "code":      CodeChunkingStrategy(),
             "synthetic": SyntheticDocChunkingStrategy(),
             "paper":     PaperChunkingStrategy(),
+            "plain":     PlainTextChunkingStrategy(),
             **(strategy_map or {}),
         }
 
