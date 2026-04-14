@@ -2,8 +2,10 @@
 
 from app.schemas import QueryRequest, QueryResponse, SourceChunk
 from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage, AIMessage
 import uuid
+import json
 from .graph import graph
 from .models import ContextEntry
 from .config import (
@@ -141,3 +143,82 @@ async def query(req: QueryRequest):
         for entry in result.get("retrieved", [])
     ]
     return QueryResponse(thread_id=thread_id, answer=answer, sources=sources)
+
+
+@app.post(
+    "/query/stream",
+    tags=["rag"],
+    summary="Ask a question (streaming)",
+    description=(
+        "Send a natural-language question to the RAG pipeline and receive "
+        "the answer as a stream of tokens. Similar to /query but streams "
+        "the generated answer token-by-token."
+    ),
+    response_description="Newline-delimited JSON stream with tokens and metadata.",
+)
+async def query_stream(req: QueryRequest):
+    """Stream tokens as they are generated.
+    
+    Yields newline-delimited JSON events with types: metadata, token, error.
+    """
+    thread_id = req.conversation.id if req.conversation and req.conversation.id else str(uuid.uuid4())
+    messages_list = [HumanMessage(content=req.message)]
+    config = {"configurable": {"thread_id": thread_id}}
+    context_entries = req.context.entries if req.context else []
+    
+    # Run the graph up to retrieval
+    from .graph import retrieve, build_messages
+    from .factory import get_llm
+    from langchain_core.output_parsers import StrOutputParser
+    
+    state = {
+        "messages": messages_list,
+        "context": context_entries,
+        "retrieved": [],
+    }
+    
+    # Run retrieval (blocking but fast)
+    retrieval_result = retrieve(state)
+    state.update(retrieval_result)
+    retrieved = state.get("retrieved", [])
+    
+    # Build sources for metadata event
+    sources = [
+        SourceChunk(
+            content=entry.content or "",
+            metadata={
+                "source": entry.name or "",
+                **({"score": entry.score} if entry.score is not None else {}),
+            },
+        )
+        for entry in retrieved
+    ]
+    
+    def token_generator():
+        """Generate tokens from the LLM stream."""
+        # First, yield metadata with sources and thread_id
+        yield json.dumps({
+            "type": "metadata",
+            "sources": [
+                {
+                    "content": s.content,
+                    "metadata": s.metadata,
+                }
+                for s in sources
+            ],
+            "thread_id": thread_id,
+        }) + "\n"
+        
+        try:
+            # Build messages for generation
+            messages = build_messages(state)
+            
+            # Stream tokens from LLM
+            llm = get_llm()
+            for token in llm.stream(messages):
+                if token:  # Skip empty tokens
+                    yield json.dumps({"type": "token", "content": token}) + "\n"
+        except Exception as e:
+            yield json.dumps({"type": "error", "content": str(e)}) + "\n"
+    
+    return StreamingResponse(token_generator(), media_type="application/x-ndjson")

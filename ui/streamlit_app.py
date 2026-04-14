@@ -4,6 +4,7 @@
 # Run with:  streamlit run ui/streamlit_app.py
 
 import os
+import json
 import streamlit as st
 import requests
 
@@ -50,6 +51,68 @@ def _query_api(question: str, thread_id: str | None = None) -> dict:
     )
     resp.raise_for_status()
     return resp.json()
+
+
+def _stream_query(question: str, thread_id: str | None = None):
+    """Stream tokens from the /query/stream endpoint.
+    
+    Yields tuples of (content, sources, thread_id, error).
+    """
+    payload = {
+        "message": question,
+        "conversation": {
+            "id": thread_id,
+        },
+        "context": {
+            "entries": [],
+        },
+        "meta": {
+            "clientId": "streamlit",
+        },
+    }
+    
+    sources = []
+    new_thread_id = thread_id
+    error = None
+    
+    try:
+        resp = requests.post(
+            f"{API_URL}/query/stream",
+            json=payload,
+            stream=True,
+            timeout=300,
+        )
+        resp.raise_for_status()
+        
+        # Parse newline-delimited JSON
+        for line in resp.iter_lines():
+            if line:
+                try:
+                    event = json.loads(line)
+                    event_type = event.get("type")
+                    
+                    if event_type == "metadata":
+                        sources = event.get("sources", [])
+                        new_thread_id = event.get("thread_id", thread_id)
+                    elif event_type == "token":
+                        content = event.get("content", "")
+                        yield content, None, None, None  # Yield only token
+                    elif event_type == "error":
+                        error = event.get("content", "Unknown error")
+                        yield "", sources, new_thread_id, error
+                        break
+                except json.JSONDecodeError:
+                    continue
+        
+        # Final yield with complete metadata
+        yield "", sources, new_thread_id, error
+        
+    except requests.exceptions.ConnectionError:
+        error = "⚠️ Could not connect to the API. Is the server running?"
+        yield "", [], thread_id, error
+    except Exception as e:
+        error = f"⚠️ API error: {e}"
+        yield "", [], thread_id, error
 
 
 # ── Page config ────────────────────────────────────────────────────────────────
@@ -129,26 +192,59 @@ if prompt := st.chat_input("Ask a question about your documents…"):
 
     # 2. Call the API and display the answer
     with st.chat_message("assistant"):
-        with st.spinner("Retrieving and generating…"):
-            try:
-                result = _query_api(prompt, thread_id=st.session_state.thread_id)
-                answer = result.get("answer", "No answer returned.")
-                sources = result.get("sources", [])
-                st.session_state.thread_id = result.get("thread_id", st.session_state.thread_id)
-            except requests.exceptions.ConnectionError:
-                answer = "⚠️ Could not connect to the API. Is the server running?"
-                sources = []
-            except Exception as e:
-                answer = f"⚠️ API error: {e}"
-                sources = []
-
-        st.markdown(answer)
-        if sources:
-            _render_sources(sources)
+        message_placeholder = st.empty()
+        sources_placeholder = st.empty()
+        
+        # Show loading status while waiting for retrieval
+        with message_placeholder.container():
+            st.markdown("⏳ Retrieving documents and generating response...")
+        
+        full_answer = ""
+        sources = []
+        final_thread_id = st.session_state.thread_id
+        error = None
+        
+        try:
+            for token, chunk_sources, chunk_thread_id, chunk_error in _stream_query(prompt, thread_id=st.session_state.thread_id):
+                if chunk_sources is not None:
+                    sources = chunk_sources
+                    # Clear the loading message once we have metadata
+                    message_placeholder.empty()
+                
+                if token:
+                    full_answer += token
+                    message_placeholder.markdown(full_answer + "▌")  # Add cursor while streaming
+                
+                if chunk_thread_id is not None:
+                    final_thread_id = chunk_thread_id
+                
+                if chunk_error:
+                    error = chunk_error
+            
+            # Remove cursor and display final answer
+            if full_answer:
+                message_placeholder.markdown(full_answer)
+            
+            # Update thread ID
+            st.session_state.thread_id = final_thread_id
+            
+            # Display error if any
+            if error:
+                st.error(error)
+            
+            # Display sources
+            if sources:
+                with sources_placeholder:
+                    _render_sources(sources)
+        
+        except Exception as e:
+            st.error(f"⚠️ Error: {e}")
+            full_answer = f"⚠️ Error: {e}"
+            sources = []
 
     # 3. Persist assistant message to history
     st.session_state.messages.append({
         "role": "assistant",
-        "content": answer,
+        "content": full_answer,
         "sources": sources,
     })
