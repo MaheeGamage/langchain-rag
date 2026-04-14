@@ -125,6 +125,9 @@ st.set_page_config(
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 api_config = _get_config()
 
+if "stream_mode" not in st.session_state:
+    st.session_state.stream_mode = True
+
 with st.sidebar:
     st.title("RAG Chat")
     st.caption("Ask questions about your ingested documents.")
@@ -137,6 +140,13 @@ with st.sidebar:
         st.markdown(f"- Embeddings: `{api_config.get('embedding_model', '?')}`")
     else:
         st.warning("API not reachable")
+
+    st.divider()
+    st.toggle(
+        "Stream responses",
+        key="stream_mode",
+        help="When off, responses are shown only after full generation.",
+    )
 
     st.divider()
 
@@ -195,34 +205,69 @@ if prompt := st.chat_input("Ask a question about your documents…"):
         message_placeholder = st.empty()
         sources_placeholder = st.empty()
         
-        # Show loading status while waiting for retrieval
-        with message_placeholder.container():
-            st.markdown("⏳ Retrieving documents and generating response...")
-        
         full_answer = ""
         sources = []
         final_thread_id = st.session_state.thread_id
         error = None
         
         try:
-            for token, chunk_sources, chunk_thread_id, chunk_error in _stream_query(prompt, thread_id=st.session_state.thread_id):
-                if chunk_sources is not None:
-                    sources = chunk_sources
-                    # Clear the loading message once we have metadata
-                    message_placeholder.empty()
-                
-                if token:
-                    full_answer += token
-                    message_placeholder.markdown(full_answer + "▌")  # Add cursor while streaming
-                
-                if chunk_thread_id is not None:
-                    final_thread_id = chunk_thread_id
-                
-                if chunk_error:
-                    error = chunk_error
-            
-            # Remove cursor and display final answer
-            if full_answer:
+            if st.session_state.stream_mode:
+                first_token_received = False
+                loading_placeholder = st.empty()
+                loading_placeholder.markdown(
+                    """
+                    <div style=\"display:flex;align-items:center;gap:0.6rem;color:#6b7280;\">
+                        <span class=\"loading-dot\"></span>
+                        <span>Generating the response…</span>
+                    </div>
+                    <style>
+                        .loading-dot {
+                            width: 0.9rem;
+                            height: 0.9rem;
+                            border: 2px solid #d1d5db;
+                            border-top-color: #2563eb;
+                            border-radius: 50%;
+                            display: inline-block;
+                            animation: spin 0.8s linear infinite;
+                        }
+                        @keyframes spin {
+                            from { transform: rotate(0deg); }
+                            to { transform: rotate(360deg); }
+                        }
+                    </style>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                for token, chunk_sources, chunk_thread_id, chunk_error in _stream_query(prompt, thread_id=st.session_state.thread_id):
+                    if token:
+                        if not first_token_received:
+                            first_token_received = True
+                            loading_placeholder.empty()
+                        full_answer += token
+                        message_placeholder.markdown(full_answer + "▌")  # Add cursor while streaming
+
+                    if chunk_sources is not None:
+                        sources = chunk_sources
+
+                    if chunk_thread_id is not None:
+                        final_thread_id = chunk_thread_id
+
+                    if chunk_error:
+                        error = chunk_error
+
+                if not first_token_received:
+                    loading_placeholder.empty()
+
+                # Remove cursor and display final answer
+                message_placeholder.markdown(full_answer)
+            else:
+                with st.spinner("Retrieving and generating…"):
+                    result = _query_api(prompt, thread_id=st.session_state.thread_id)
+                    full_answer = result.get("answer", "No answer returned.")
+                    sources = result.get("sources", [])
+                    final_thread_id = result.get("thread_id", st.session_state.thread_id)
+
                 message_placeholder.markdown(full_answer)
             
             # Update thread ID

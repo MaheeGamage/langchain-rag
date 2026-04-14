@@ -44,6 +44,29 @@ retriever = get_retriever()
 log.info("Using %s LLM: %s", LLM_PROVIDER, LLM_MODEL)
 llm = get_llm() | StrOutputParser()
 
+
+def _invoke_retriever_with_retry(query: str, max_attempts: int = 3):
+    """Retry retriever calls for transient transport issues."""
+    last_exc: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return retriever.invoke(query)
+        except Exception as exc:
+            last_exc = exc
+            if attempt == max_attempts:
+                break
+            backoff_s = 0.25 * (2 ** (attempt - 1))
+            log.warning(
+                "Retriever invoke failed (attempt %d/%d): %s. Retrying in %.2fs",
+                attempt,
+                max_attempts,
+                exc,
+                backoff_s,
+            )
+            time.sleep(backoff_s)
+
+    raise RuntimeError(f"Retriever invoke failed after {max_attempts} attempts: {last_exc}") from last_exc
+
 @mlflow.trace(span_type=SpanType.RETRIEVER)
 def retrieve(state: RAGState):
     # Use the latest HumanMessage as the retrieval query
@@ -52,7 +75,7 @@ def retrieve(state: RAGState):
         "",
     )
     t = time.perf_counter()
-    docs = retriever.invoke(query)
+    docs = _invoke_retriever_with_retry(query)
     log.info("Retrieved %d chunks in %.2fs", len(docs), time.perf_counter() - t)
     retrieved = [
         ContextEntry(

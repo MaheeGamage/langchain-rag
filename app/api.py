@@ -163,51 +163,67 @@ async def query_stream(req: QueryRequest):
     """
     thread_id = req.conversation.id if req.conversation and req.conversation.id else str(uuid.uuid4())
     messages_list = [HumanMessage(content=req.message)]
-    config = {"configurable": {"thread_id": thread_id}}
     context_entries = req.context.entries if req.context else []
     
-    # Run the graph up to retrieval
-    from .graph import retrieve, build_messages
+    # Streaming path uses the same retrieval and prompt-building logic.
+    from .graph import build_messages, retrieve
     from .factory import get_llm
-    from langchain_core.output_parsers import StrOutputParser
-    
-    state = {
-        "messages": messages_list,
-        "context": context_entries,
-        "retrieved": [],
-    }
-    
-    # Run retrieval (blocking but fast)
-    retrieval_result = retrieve(state)
-    state.update(retrieval_result)
-    retrieved = state.get("retrieved", [])
-    
-    # Build sources for metadata event
-    sources = [
-        SourceChunk(
-            content=entry.content or "",
-            metadata={
-                "source": entry.name or "",
-                **({"score": entry.score} if entry.score is not None else {}),
-            },
-        )
-        for entry in retrieved
-    ]
     
     def token_generator():
         """Generate tokens from the LLM stream."""
-        # First, yield metadata with sources and thread_id
-        yield json.dumps({
-            "type": "metadata",
-            "sources": [
+        state = {
+            "messages": messages_list,
+            "context": context_entries,
+            "retrieved": [],
+        }
+
+        # Retrieval can fail transiently (e.g. transport reset). Keep stream alive
+        # and return a structured error event instead of a pre-stream 500.
+        try:
+            retrieval_result = retrieve(state)
+            state.update(retrieval_result)
+            retrieved = state.get("retrieved", [])
+        except Exception as e:
+            yield json.dumps(
                 {
-                    "content": s.content,
-                    "metadata": s.metadata,
+                    "type": "metadata",
+                    "sources": [],
+                    "thread_id": thread_id,
                 }
-                for s in sources
-            ],
-            "thread_id": thread_id,
-        }) + "\n"
+            ) + "\n"
+            yield json.dumps(
+                {
+                    "type": "error",
+                    "content": f"Retrieval failed: {e}",
+                }
+            ) + "\n"
+            return
+
+        sources = [
+            SourceChunk(
+                content=entry.content or "",
+                metadata={
+                    "source": entry.name or "",
+                    **({"score": entry.score} if entry.score is not None else {}),
+                },
+            )
+            for entry in retrieved
+        ]
+
+        # Send metadata first so UI can update thread_id/sources.
+        yield json.dumps(
+            {
+                "type": "metadata",
+                "sources": [
+                    {
+                        "content": s.content,
+                        "metadata": s.metadata,
+                    }
+                    for s in sources
+                ],
+                "thread_id": thread_id,
+            }
+        ) + "\n"
         
         try:
             # Build messages for generation
