@@ -20,7 +20,7 @@ def get_llm():
 
     if LLM_PROVIDER == "ollama":
         from langchain_ollama import OllamaLLM
-        return OllamaLLM(model=LLM_MODEL, base_url=LLM_BASE_URL)
+        return OllamaLLM(model=LLM_MODEL, base_url=LLM_BASE_URL) #, num_predict=512)
 
     if LLM_PROVIDER == "openai":
         from langchain_openai import ChatOpenAI

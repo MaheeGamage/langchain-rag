@@ -17,10 +17,10 @@ from typing import Callable
 from langchain_core.documents import Document
 
 # Re-use the existing parsers from app/ingest_pipeline — no duplication.
-from knowledge_ingestion.ingest_pipeline.parsers.mdx_parser      import parse_mdx
-from knowledge_ingestion.ingest_pipeline.parsers.notebook_parser import parse_notebook
-from knowledge_ingestion.ingest_pipeline.parsers.pdf_parser      import parse_pdf
-from knowledge_ingestion.ingest_pipeline.parsers.python_parser   import parse_python
+from knowledge_ingestion.ingest_v1.ingest_pipeline.parsers.mdx_parser      import parse_mdx
+from knowledge_ingestion.ingest_v1.ingest_pipeline.parsers.notebook_parser import parse_notebook
+from knowledge_ingestion.ingest_v1.ingest_pipeline.parsers.pdf_parser      import parse_pdf
+from knowledge_ingestion.ingest_v1.ingest_pipeline.parsers.python_parser   import parse_python
 
 ParserFn = Callable[[Path], list[Document]]
 

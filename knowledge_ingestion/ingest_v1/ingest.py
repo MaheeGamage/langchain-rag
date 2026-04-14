@@ -32,13 +32,13 @@ from app.vectorstore import get_vectorstore
 from langchain_chroma import Chroma
 from tqdm import tqdm
 
-from knowledge_ingestion.ingest_pipeline.chunker import chunk_documents
+from knowledge_ingestion.ingest_v1.ingest_pipeline.chunker import chunk_documents
 from app.config  import (
     BATCH_SIZE, CHROMA_TARGET, CHUNK_OVERLAP, CHUNK_SIZE,
     COLLECTION_NAME, DATA_ROOT, EMBEDDING_MODEL, EMBEDDING_PROVIDER,
 )
 from app.factory import get_embeddings
-from knowledge_ingestion.ingest_pipeline.router  import route_file, walk_data_root
+from knowledge_ingestion.ingest_v1.ingest_pipeline.router  import route_file, walk_data_root
 
 LOG_FILE = "ingest_pipeline.log"
 
