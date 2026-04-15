@@ -117,7 +117,7 @@ def _stream_query(question: str, thread_id: str | None = None):
 
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="RAG Chat",
+    page_title="Q8S Assistant",
     page_icon="🔍",
     layout="centered",
 )
@@ -129,7 +129,7 @@ if "stream_mode" not in st.session_state:
     st.session_state.stream_mode = True
 
 with st.sidebar:
-    st.title("RAG Chat")
+    st.title("Q8S Assistant")
     st.caption("Ask questions about your ingested documents.")
 
     st.divider()
@@ -181,7 +181,7 @@ def _render_sources(sources: list[dict]) -> None:
 
 
 # ── Page header ────────────────────────────────────────────────────────────────
-st.header("🔍 RAG Chat", divider="gray")
+st.header("🔍 Q8S Assistant", divider="gray")
 
 # ── Render chat history ────────────────────────────────────────────────────────
 for msg in st.session_state.messages:
