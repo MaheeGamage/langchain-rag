@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 _VALID_PROVIDERS = ("ollama", "openai", "gemini")
+_VALID_GRAPH_IMPLEMENTATIONS = ("baseline", "agentic")
 
 
 def _parse_bool(name: str, default: str = "false") -> bool:
@@ -33,6 +34,8 @@ def _parse_int(name: str, default: str) -> int:
 LLM_PROVIDER:       str = os.getenv("LLM_PROVIDER",       "ollama")
 EMBEDDING_PROVIDER: str = os.getenv("EMBEDDING_PROVIDER", "ollama")
 JUDGE_PROVIDER:     str = os.getenv("JUDGE_PROVIDER",     "ollama")
+# Graph switch (single source of truth for which graph implementation is exported)
+RAG_GRAPH_IMPLEMENTATION: str = os.getenv("RAG_GRAPH_IMPLEMENTATION", "baseline").strip().lower()
 # Default to JUDGE_PROVIDER if not explicitly set (backward compatibility)
 JUDGE_EMBEDDING_PROVIDER: str = os.getenv("JUDGE_EMBEDDING_PROVIDER", JUDGE_PROVIDER)
 
@@ -44,6 +47,12 @@ for _p, _name in (
 ):
     if _p not in _VALID_PROVIDERS:
         raise ValueError(f"Unknown {_name}={_p!r}. Choose from: {list(_VALID_PROVIDERS)}")
+
+if RAG_GRAPH_IMPLEMENTATION not in _VALID_GRAPH_IMPLEMENTATIONS:
+    raise ValueError(
+        "Unknown RAG_GRAPH_IMPLEMENTATION="
+        f"{RAG_GRAPH_IMPLEMENTATION!r}. Choose from: {list(_VALID_GRAPH_IMPLEMENTATIONS)}"
+    )
 
 # ── Chroma HTTP connection ───────────────────────────────────────────────────
 # Defaults target a local-development host process (API runs on host, Chroma in Docker).

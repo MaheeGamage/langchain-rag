@@ -133,7 +133,12 @@ app/
   vectorstore.py  — Builds Chroma HTTP vectorstore client
   ingest.py       — PDF → chunks → embeddings → ChromaDB
   retriever.py    — Wraps ChromaDB as a LangChain retriever
-  graph.py        — LangGraph pipeline: retrieve → generate
+  graph.py        — Single graph export point (selects implementation)
+  graphs/
+    baseline.py   — Baseline retrieve → generate graph
+    agentic.py    — Agentic/iterative retrieval graph
+    common.py     — Shared graph utilities
+    types.py      — Shared graph state type(s)
   api.py          — FastAPI app exposing POST /query
   __init__.py
 
@@ -164,9 +169,10 @@ All tuneable values live in `app/config.py`. **Do not hard-code model names or
 paths anywhere else.**
 
 ```python
-# app/config.py — two independent switches
+# app/config.py — provider switches + graph switch
 LLM_PROVIDER       = os.getenv("LLM_PROVIDER",       "ollama")  # ollama | openai | gemini
 EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "ollama")  # ollama | openai | gemini
+RAG_GRAPH_IMPLEMENTATION = os.getenv("RAG_GRAPH_IMPLEMENTATION", "baseline")  # baseline | agentic
 
 # Resolved independently
 LLM_MODEL,    LLM_API_KEY,    LLM_BASE_URL       = ...  # from _LLM_DEFAULTS[LLM_PROVIDER]
@@ -206,15 +212,25 @@ To add a new provider (e.g. Anthropic):
 4. `poetry add langchain-anthropic` and update `pyproject.toml`.
 5. No changes needed in `ingest.py`, `retriever.py`, or `graph.py`.
 
+### Graph implementation switch
+
+`app/graph.py` is the only module that chooses which graph implementation is active.
+It reads `RAG_GRAPH_IMPLEMENTATION` from `app/config.py` and exports the selected `graph`.
+
+- `baseline` → `app/graphs/baseline.py`
+- `agentic` → `app/graphs/agentic.py`
+
+Do not import `app.graphs.*` directly from API/UI or evaluators; import from `app.graph`.
+
 ### LangGraph state
 
-The graph state is defined as a `TypedDict` in `graph.py`:
+The shared graph state is defined in `app/graphs/types.py`:
 
 ```python
-class RAGState(TypedDict):
-    question:  str
-    documents: List[Document]
-    answer:    str
+class GraphState(TypedDict):
+  messages: Annotated[list[BaseMessage], add_messages]
+  context: list[ContextEntry]
+  retrieved: list[ContextEntry]
 ```
 
 - Add new fields here when extending the pipeline (e.g. `rewritten_question`, `citations`).
@@ -222,7 +238,7 @@ class RAGState(TypedDict):
 
 ### Adding a new graph node
 
-1. Define a function `def my_node(state: RAGState) -> dict:` in `graph.py`.
+1. Define a function `def my_node(state: GraphState) -> dict:` in the target implementation file under `app/graphs/`.
 2. Register it: `builder.add_node("my_node", my_node)`.
 3. Wire edges: `builder.add_edge("previous_node", "my_node")`.
 4. Return only the state keys the node modifies.
@@ -270,7 +286,7 @@ via HTTP calls to the FastAPI `/query` endpoint.
 
 ## 5. Code Style & Structure Rules
 
-- **One concern per file.** `graph.py` = graph only; `retriever.py` = retriever only; `vectorstore.py` = Chroma client construction only.
+- **One concern per file.** `graph.py` = graph selection/export only; `app/graphs/*.py` = implementation logic; `retriever.py` = retriever only; `vectorstore.py` = Chroma client construction only.
 - **No hard-coded strings** for model names or paths — always import from `config.py`.
 - **Never import provider-specific LLM/embedding classes outside `factory.py`** — use `get_llm()` / `get_embeddings()` instead.
 - **No `vectorstore.persist()`** — Chroma ≥ 0.4 auto-persists on write.
@@ -313,6 +329,7 @@ grep -rl "app/graph.py" .agent/sessions/
 - **Don't run `python ingest.py` directly** — run as a module: `python -m app.ingest`.
 - **Don't hard-code model names or provider-specific classes** outside `config.py` / `factory.py`.
 - **Don't add `if PROVIDER == ...` branches outside `factory.py`** — all provider dispatch lives there.
+- **Don't add graph-selection branches outside `app/graph.py`** — all graph implementation dispatch lives there.
 - **Don't spread Chroma connection logic across files** — keep Chroma client construction centralized in `app/vectorstore.py`.
 - **Don't import `app.graph` or backend modules in `streamlit_app.py`** — the UI
   must remain a pure HTTP client. All RAG logic goes through the FastAPI API.

@@ -1,23 +1,14 @@
-# app/graph.py
-
+import importlib
 import logging
 import sqlite3
-import time
-from typing import Annotated, TypedDict, List
+from collections.abc import Callable, Iterator
 
-from langchain_core.documents import Document
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
-from langchain_core.output_parsers import StrOutputParser
-from langgraph.graph import StateGraph, END
-from langgraph.graph.message import add_messages
+from langchain_core.messages import BaseMessage
 from langgraph.checkpoint.sqlite import SqliteSaver
-import mlflow
-from mlflow.entities import SpanType 
 
-from .retriever import get_retriever
-from .config import LLM_PROVIDER, LLM_MODEL, CONVERSATIONS_DB
-from .factory import get_llm
-from .models import ContextEntry
+from app.config import CONVERSATIONS_DB, RAG_GRAPH_IMPLEMENTATION
+from app.graphs.common import context_entries_to_sources
+from app.models import ContextEntry
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,134 +22,71 @@ log = logging.getLogger(__name__)
 _db_conn = sqlite3.connect(CONVERSATIONS_DB, check_same_thread=False)
 _checkpointer = SqliteSaver(_db_conn)
 
-class RAGState(TypedDict):
-    # --- from API request ---
-    messages:  Annotated[list[BaseMessage], add_messages]  # full conversation (history + latest turn). Currently client store conversation history  
-    context:   list[ContextEntry]                          # entries forwarded from the API request
+_IMPLEMENTATIONS = {
+    "baseline": {
+        "module": "app.graphs.baseline",
+        "build_graph": "build_graph",
+        "stream_answer": "stream_answer",
+    },
+    "agentic": {
+        "module": "app.graphs.agentic",
+        "build_graph": "build_graph",
+        "stream_answer": "stream_answer",
+    },
+}
 
-    # --- internal graph state ---
-    retrieved: list[ContextEntry]                          # chunks fetched by the retriever
+
+def _load_callables(name: str) -> tuple[Callable, Callable]:
+    spec = _IMPLEMENTATIONS[name]
+    module = importlib.import_module(spec["module"])
+    build_graph = getattr(module, spec["build_graph"])
+    stream_answer = getattr(module, spec["stream_answer"])
+    return build_graph, stream_answer
 
 
-retriever = get_retriever()
-log.info("Using %s LLM: %s", LLM_PROVIDER, LLM_MODEL)
-llm = get_llm() | StrOutputParser()
+ACTIVE_GRAPH_IMPLEMENTATION = RAG_GRAPH_IMPLEMENTATION
+_build_graph, _stream_answer = _load_callables(ACTIVE_GRAPH_IMPLEMENTATION)
+graph = _build_graph(checkpointer=_checkpointer)
+
+log.info("Active RAG graph implementation: %s", ACTIVE_GRAPH_IMPLEMENTATION)
 
 
-def _invoke_retriever_with_retry(query: str, max_attempts: int = 3):
-    """Retry retriever calls for transient transport issues."""
-    last_exc: Exception | None = None
-    for attempt in range(1, max_attempts + 1):
-        try:
-            return retriever.invoke(query)
-        except Exception as exc:
-            last_exc = exc
-            if attempt == max_attempts:
-                break
-            backoff_s = 0.25 * (2 ** (attempt - 1))
-            log.warning(
-                "Retriever invoke failed (attempt %d/%d): %s. Retrying in %.2fs",
-                attempt,
-                max_attempts,
-                exc,
-                backoff_s,
-            )
-            time.sleep(backoff_s)
+def stream_query(
+    *,
+    messages: list[BaseMessage],
+    context_entries: list[ContextEntry],
+    thread_id: str,
+) -> Iterator[dict]:
+    config = {"configurable": {"thread_id": thread_id}}
 
-    raise RuntimeError(f"Retriever invoke failed after {max_attempts} attempts: {last_exc}") from last_exc
-
-@mlflow.trace(span_type=SpanType.RETRIEVER)
-def retrieve(state: RAGState):
-    # Use the latest HumanMessage as the retrieval query
-    query = next(
-        (m.content for m in reversed(state["messages"]) if isinstance(m, HumanMessage)),
-        "",
-    )
-    t = time.perf_counter()
-    docs = _invoke_retriever_with_retry(query)
-    log.info("Retrieved %d chunks in %.2fs", len(docs), time.perf_counter() - t)
-    retrieved = [
-        ContextEntry(
-            type="snippet",
-            name=doc.metadata.get("source"),
-            content=doc.page_content,
-            source="retriever",
-            score=doc.metadata.get("score"),
+    try:
+        retrieved, token_iterator = _stream_answer(
+            messages=messages,
+            context_entries=context_entries,
+            graph_instance=graph,
+            config=config,
         )
-        for doc in docs
-    ]
-    return {"retrieved": retrieved}
+    except Exception as exc:
+        yield {
+            "type": "metadata",
+            "sources": [],
+            "thread_id": thread_id,
+        }
+        yield {
+            "type": "error",
+            "content": f"Retrieval/generation failed: {exc}",
+        }
+        return
 
-def build_messages(state: RAGState) -> list[BaseMessage]:
-    # Retrieved chunks → string block
-    rag_context = "\n\n".join(
-        e.content for e in state.get("retrieved", []) if e.content
-    )
+    yield {
+        "type": "metadata",
+        "sources": context_entries_to_sources(retrieved),
+        "thread_id": thread_id,
+    }
 
-    # User-provided context entries → string block
-    user_context_parts = []
-    for entry in state.get("context", []):
-        header = f"[{entry.type}]"
-        if entry.name:
-            header += f" {entry.name}"
-        if entry.mimeType:
-            header += f" ({entry.mimeType})"
-        if entry.score is not None:
-            header += f" score={entry.score:.2f}"
-        if entry.content:
-            user_context_parts.append(f"{header}\n{entry.content}")
-    user_context = "\n\n".join(user_context_parts)
-
-    BASE_PROMPT = """You are an AI assistant for an experiment tracking system built around MLflow,
-repurposed to track experiments in quantum software development.
-
-Your role is to help users understand how to use experiment tracking concepts
-and how to apply them using mlflow by using it's sdks in quantum software experiments.
-
-Provide clear, concise answers based on the context provided. But don't mention
-this to the user when you answer. If the context doesn't contain the information
-needed to answer the question, say you don't know."""
-
-    system_parts = [BASE_PROMPT]
-    if user_context:
-        system_parts.append(f"User-provided context:\n{user_context}")
-    if rag_context:
-        system_parts.append(f"Retrieved context:\n{rag_context}")
-
-    system_content = "\n\n".join(system_parts)
-
-    # Gemma models do not support SystemMessage — fold it into a human/ai pair instead
-    if "gemma" in LLM_MODEL.lower():
-        messages: list[BaseMessage] = [
-            HumanMessage(content=system_content),
-            AIMessage(content="Understood."),
-        ]
-    else:
-        messages = [SystemMessage(content=system_content)]
-
-    messages.extend(state["messages"])  # full history: past turns + latest HumanMessage
-    return messages
-
-
-def generate(state: RAGState):
-    messages = build_messages(state)
-    t = time.perf_counter()
-    answer = llm.invoke(messages)
-    log.info("Generated answer in %.2fs", time.perf_counter() - t)
-    return {"messages": [AIMessage(content=answer)]}
-
-
-def build_graph():
-    builder = StateGraph(RAGState)
-
-    builder.add_node("retrieve", retrieve)
-    builder.add_node("generate", generate)
-
-    builder.set_entry_point("retrieve")
-    builder.add_edge("retrieve", "generate")
-    builder.add_edge("generate", END)
-
-    return builder.compile(checkpointer=_checkpointer)
-
-
-graph = build_graph()
+    for token in token_iterator:
+        if token:
+            yield {
+                "type": "token",
+                "content": token,
+            }

@@ -24,6 +24,11 @@ A retrieval-augmented generation (RAG) system using LangChain, ChromaDB, and Oll
 
 ### ChromaDB Connection
 
+Graph implementation selection is controlled via `.env`:
+```bash
+RAG_GRAPH_IMPLEMENTATION=baseline  # baseline | agentic
+```
+
 The app connects to ChromaDB over HTTP only, and this repository configures it
 through `docker-compose.yml` (`chroma` service at `chroma:8000` inside the network).
 
@@ -162,7 +167,12 @@ app/
   │       └── python_parser.py   # .py — AST-based docstring + source extraction
   ├── retriever.py       # Semantic search from ChromaDB
   ├── api.py             # FastAPI endpoints
-  └── graph.py           # LangGraph RAG pipeline
+  ├── graph.py           # Single export point; selects active graph implementation
+  └── graphs/            # Graph implementations and shared helpers
+      ├── baseline.py    # Existing retrieve -> generate graph
+      ├── agentic.py     # Iterative agentic retrieval graph
+      ├── common.py      # Shared graph helpers
+      └── types.py       # Shared graph state typing
 ui/
   └── streamlit_app.py   # Streamlit chat UI
 run.py                   # Starts both servers locally (no Docker)

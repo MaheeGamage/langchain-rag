@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage, AIMessage
 import uuid
 import json
-from .graph import graph
+from .graph import ACTIVE_GRAPH_IMPLEMENTATION, graph, stream_query
 from .models import ContextEntry
 from .config import (
     CHROMA_TARGET,
@@ -94,6 +94,7 @@ async def config():
         "llm_provider": LLM_PROVIDER,
         "embedding_provider": EMBEDDING_PROVIDER,
         "chroma_target": CHROMA_TARGET,
+        "rag_graph_implementation": ACTIVE_GRAPH_IMPLEMENTATION,
     }
 
 
@@ -164,77 +165,14 @@ async def query_stream(req: QueryRequest):
     thread_id = req.conversation.id if req.conversation and req.conversation.id else str(uuid.uuid4())
     messages_list = [HumanMessage(content=req.message)]
     context_entries = req.context.entries if req.context else []
-    
-    # Streaming path uses the same retrieval and prompt-building logic.
-    from .graph import build_messages, retrieve
-    from .factory import get_llm
-    
+
     def token_generator():
-        """Generate tokens from the LLM stream."""
-        state = {
-            "messages": messages_list,
-            "context": context_entries,
-            "retrieved": [],
-        }
-
-        # Retrieval can fail transiently (e.g. transport reset). Keep stream alive
-        # and return a structured error event instead of a pre-stream 500.
-        try:
-            retrieval_result = retrieve(state)
-            state.update(retrieval_result)
-            retrieved = state.get("retrieved", [])
-        except Exception as e:
-            yield json.dumps(
-                {
-                    "type": "metadata",
-                    "sources": [],
-                    "thread_id": thread_id,
-                }
-            ) + "\n"
-            yield json.dumps(
-                {
-                    "type": "error",
-                    "content": f"Retrieval failed: {e}",
-                }
-            ) + "\n"
-            return
-
-        sources = [
-            SourceChunk(
-                content=entry.content or "",
-                metadata={
-                    "source": entry.name or "",
-                    **({"score": entry.score} if entry.score is not None else {}),
-                },
-            )
-            for entry in retrieved
-        ]
-
-        # Send metadata first so UI can update thread_id/sources.
-        yield json.dumps(
-            {
-                "type": "metadata",
-                "sources": [
-                    {
-                        "content": s.content,
-                        "metadata": s.metadata,
-                    }
-                    for s in sources
-                ],
-                "thread_id": thread_id,
-            }
-        ) + "\n"
-        
-        try:
-            # Build messages for generation
-            messages = build_messages(state)
-            
-            # Stream tokens from LLM
-            llm = get_llm()
-            for token in llm.stream(messages):
-                if token:  # Skip empty tokens
-                    yield json.dumps({"type": "token", "content": token}) + "\n"
-        except Exception as e:
-            yield json.dumps({"type": "error", "content": str(e)}) + "\n"
+        """Generate newline-delimited JSON stream events from the active graph."""
+        for event in stream_query(
+            messages=messages_list,
+            context_entries=context_entries,
+            thread_id=thread_id,
+        ):
+            yield json.dumps(event) + "\n"
     
     return StreamingResponse(token_generator(), media_type="application/x-ndjson")
