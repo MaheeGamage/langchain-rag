@@ -55,17 +55,18 @@ source .venv/bin/activate && pip install <package>
 
 > Always use the `.venv` interpreter. Never use a system-level `python`.
 
-### Ingest PDFs into ChromaDB
+### Ingest content into ChromaDB
 
 ```bash
-poetry run python -m app.ingest
+poetry run python -m knowledge_ingestion.ingest_v2.ingest
 # or
-source .venv/bin/activate && python -m app.ingest
+source .venv/bin/activate && python -m knowledge_ingestion.ingest_v2.ingest
 ```
 
-- Place PDFs in `./data/` before running.
-- Logs go to `ingest.log` (auto-created). Tail with `tail -f ingest.log`.
+- Content root is controlled by `DATA_ROOT` in `.env` (default: `./knowledge_ingestion/content/v3/content`).
+- Logs go to `ingest_pipeline.log` (auto-created at repo root). Tail with `tail -f ingest_pipeline.log`.
 - Embeddings are written to ChromaDB over HTTP (`CHROMA_HOST:CHROMA_PORT`).
+- `ingest_v1/` is the older single-file pipeline — kept for reference. **Use `ingest_v2` for all new ingestion.**
 
 ### Run both servers (recommended)
 
@@ -105,8 +106,8 @@ ollama serve          # start if not running (usually auto-started)
 # Build and start all services (Ollama + ChromaDB + API + UI)
 docker compose up --build
 
-# Ingest PDFs inside Docker (place files in ./data/ first)
-docker compose run --rm api python -m app.ingest
+# Ingest content inside Docker (set DATA_ROOT in .env first)
+docker compose run --rm api python -m knowledge_ingestion.ingest_v2.ingest
 
 # Full rebuild from scratch (re-downloads Ollama models)
 docker compose down -v && docker compose up --build
@@ -129,21 +130,55 @@ Image layout:
 
 ```
 app/
-  config.py       — Central config: model names, paths. Change models here.
+  config.py       — Central config: model names, paths, chunk sizes. Change models here.
   vectorstore.py  — Builds Chroma HTTP vectorstore client
-  ingest.py       — PDF → chunks → embeddings → ChromaDB
-  retriever.py    — Wraps ChromaDB as a LangChain retriever
-  graph.py        — Single graph export point (selects implementation)
+  retriever.py    — Wraps ChromaDB as a LangChain retriever (k=4)
+  factory.py      — Only place that imports provider-specific LLM/embedding packages
+  graph.py        — Single graph export point (selects implementation via RAG_GRAPH_IMPLEMENTATION)
   graphs/
     baseline.py   — Baseline retrieve → generate graph
     agentic.py    — Agentic/iterative retrieval graph
-    common.py     — Shared graph utilities
-    types.py      — Shared graph state type(s)
-  api.py          — FastAPI app exposing POST /query
+    common.py     — Shared graph utilities (BASE_PROMPT, invoke_retriever_with_retry, etc.)
+    types.py      — Shared graph state type (GraphState)
+  api.py          — FastAPI app exposing POST /query and GET /config
+  models.py       — Shared data models (ContextEntry, etc.)
+  schemas.py      — API request/response schemas
   __init__.py
 
+knowledge_ingestion/
+  ingest_v2/               — Active modular ingestion pipeline (use this)
+    ingest.py              — Entry point: poetry run python -m knowledge_ingestion.ingest_v2.ingest
+    pipeline/
+      pipeline.py          — IngestPipeline: wires Walker → Parser → Chunker → Embedder
+      stages/
+        walker.py          — Stage 1: discover files, skip .rst/.json/.csv etc.
+        parser.py          — Stage 2: route files to parsers, stamp source_corpus metadata
+        chunker.py         — Stage 3: route each doc to the right ChunkingStrategy
+        embedder.py        — Stage 4: batch-embed chunks into Chroma with dedup + retry
+      strategies/
+        chunking.py        — NarrativeChunkingStrategy, CodeChunkingStrategy,
+                             SyntheticDocChunkingStrategy, PaperChunkingStrategy,
+                             PlainTextChunkingStrategy
+  ingest_v1/               — Legacy single-file pipeline (kept for reference only)
+  content/
+    v3/content/            — Active knowledge base (DATA_ROOT points here)
+      original paper/      — Academic papers (Markdown)
+      synth_docs/          — Synthetic cross-domain documents
+      tech_docs/           — Technical documentation (MLflow, etc.)
+
 ui/
-  streamlit_app.py  — Streamlit UI (chat interface)
+  streamlit_app.py  — Streamlit UI (chat interface, pure HTTP client)
+
+docs/
+  analysis/         — Investigation and analysis reports (one .md per investigation)
+                      Files here are READ-ONLY once written. Do not edit without
+                      explicit human instruction. Add a new dated file instead.
+  *.md              — Other project documentation
+
+experimentation/
+  evaluation/       — RAGAS evaluation scripts and notebooks
+  testset-generation/ — Testset generation scripts
+  pdf-to-markdown/  — PDF pre-processing utilities
 
 run.py            — Starts both servers locally (no Docker)
 Dockerfile        — Two-stage build; produces the shared `langchain-rag` image
@@ -151,8 +186,7 @@ docker-compose.yml — Five services: ollama, ollama-init, chroma, api, ui
 .dockerignore     — Excludes .venv/, chroma_db/, data/, .env, etc.
 pyproject.toml    — Dependencies (Poetry / PEP 621 hybrid)
 
-data/             — Input PDFs (bind-mounted at runtime; not committed)
-ingest.log        — Last ingest run log (not committed)
+ingest_pipeline.log — Last ingest run log (not committed)
 
 .agent/
   README.md       — Logging conventions (read before writing a session log)
@@ -249,25 +283,40 @@ class GraphState(TypedDict):
 `search_kwargs={"k": 4}` controls how many chunks are returned. Increase `k`
 for more context; decrease for speed.
 
+### Ingest pipeline (v2)
+
+The active ingest pipeline lives in `knowledge_ingestion/ingest_v2/` and has four composable stages:
+
+```
+WalkerStage → ParserStage → ChunkingStage → EmbedderStage
+```
+
+Each stage is a plain object with a `run()` method. Swap any stage by passing a replacement to `IngestPipeline` — nothing else changes. Entry point:
+
+```bash
+poetry run python -m knowledge_ingestion.ingest_v2.ingest
+```
+
+**Corpus detection** — `ParserStage` stamps every document with a `source_corpus` field by matching path substrings against `DEFAULT_CORPUS_KEYWORDS` in `parser.py`. First match wins; unmatched files get `"unknown"`. The corpus label drives chunking strategy selection in `ChunkingStage`.
+
+**Chunking strategies** — defined in `pipeline/strategies/chunking.py`:
+- `NarrativeChunkingStrategy` — two-pass: H1/H2/H3 header split then size enforcement
+- `CodeChunkingStrategy` — size-only split respecting `def`/`class` boundaries
+- `SyntheticDocChunkingStrategy` — sliding window with generous overlap for cross-domain docs
+- `PaperChunkingStrategy` — abstract-prefixed section chunks (parent-doc pattern for academic papers)
+- `PlainTextChunkingStrategy` — flat sliding-window with no structural awareness
+
 ### Ingest batching
 
-Embeddings are sent to Ollama in batches of `BATCH_SIZE = 25` chunks
-(configured at the top of `ingest.py`). Lower this if Ollama OOMs; raise it
-to speed up ingest on machines with more VRAM.
+Embeddings are sent to the provider in batches of `BATCH_SIZE = 25` chunks (configured in `app/config.py`). Lower this if the embedding provider OOMs; raise it to speed up ingest on machines with more VRAM.
 
 ### Ingest deduplication
 
-`app/ingest.py` assigns a deterministic ID from chunk content and skips any
-duplicate IDs during a single ingest run. This prevents Chroma upsert errors
-from duplicate IDs and avoids embedding identical chunks more than once per run.
-If you need a different uniqueness policy (e.g., per-source), update the ID
-strategy in `generate_doc_id()`.
+`EmbedderStage` assigns a deterministic MD5 ID from chunk content and skips duplicate IDs within a single ingest run. This prevents Chroma upsert errors from duplicate IDs. The strategy is implemented in `knowledge_ingestion/ingest_v2/pipeline/stages/embedder.py` (`_doc_id()`). Note: this is a within-run guard only — it does not check what is already in Chroma from prior runs.
 
 ### Ingest error tolerance
 
-If a batch upsert fails, `app/ingest.py` retries per document and skips only
-the failing chunks, logging their IDs and source paths. This keeps ingestion
-running even when some documents are malformed or trigger provider errors.
+If a batch upsert fails, `EmbedderStage._upsert_batch()` retries per document and skips only the failing chunks, logging their IDs and source paths. This keeps ingestion running even when some documents are malformed or trigger provider errors.
 
 ### Streamlit UI
 
@@ -298,6 +347,9 @@ via HTTP calls to the FastAPI `/query` endpoint.
   presentation layer, not part of the core pipeline.
 - When adding new dependencies, update **both** the `.venv` (via pip/poetry)
   **and** `pyproject.toml`.
+- **`docs/analysis/` files are read-only after creation.** Never edit a completed
+  analysis document unless the human explicitly asks. If a follow-up investigation
+  is needed, create a new dated file (e.g. `2026-04-17-retrieval-followup.md`).
 
 ---
 
@@ -326,7 +378,7 @@ grep -rl "app/graph.py" .agent/sessions/
 - **Don't use `langchain.text_splitter`** — that module was removed; use `langchain_text_splitters`.
 - **Don't change `requires-python`** in `pyproject.toml` to open-ended `>=3.12`
   without an upper bound — `langchain-ollama` requires `<4.0.0`.
-- **Don't run `python ingest.py` directly** — run as a module: `python -m app.ingest`.
+- **Don't run `python ingest.py` directly** — run as a module: `python -m knowledge_ingestion.ingest_v2.ingest`. Do not use `ingest_v1` for new ingestion runs.
 - **Don't hard-code model names or provider-specific classes** outside `config.py` / `factory.py`.
 - **Don't add `if PROVIDER == ...` branches outside `factory.py`** — all provider dispatch lives there.
 - **Don't add graph-selection branches outside `app/graph.py`** — all graph implementation dispatch lives there.
@@ -351,3 +403,6 @@ grep -rl "app/graph.py" .agent/sessions/
   `http://ollama:11434` so containers resolve the Ollama service by its Compose service name.
 - **Don't set `CHROMA_HOST=localhost` inside containers** — use
   `CHROMA_HOST=chroma` so containers resolve the Chroma service by its Compose service name.
+- **Don't edit files under `docs/analysis/`** — analysis documents are records, not living docs.
+  They are read-only once written. If you need to add information, create a new dated file.
+  Only edit an existing analysis file if the human explicitly instructs you to.
