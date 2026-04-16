@@ -18,12 +18,15 @@ from app.graphs.common import (
 )
 from app.graphs.types import GraphState
 from app.models import ContextEntry
-from app.retriever import get_retriever
+from app.retriever import BM25Config, SemanticConfig, get_bm25_retriever, get_hybrid_retriever, get_semantic_retriever
 
 log = logging.getLogger(__name__)
 
 MAX_RETRIEVAL_ROUNDS = 2
-retriever = get_retriever()
+retriever = get_hybrid_retriever([
+    (get_semantic_retriever(SemanticConfig(k=10)), 0.5),
+    (get_bm25_retriever(BM25Config(k=10)), 0.5),
+])
 planner_llm = get_llm() | StrOutputParser()
 generator_llm = get_llm() | StrOutputParser()
 

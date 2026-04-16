@@ -3,6 +3,7 @@ import time
 from typing import Iterator
 
 import mlflow
+from langsmith import traceable
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.output_parsers import StrOutputParser
 from langgraph.graph import END, StateGraph
@@ -12,18 +13,22 @@ from app.config import LLM_MODEL, LLM_PROVIDER
 from app.factory import get_llm
 from app.graphs.common import (
     build_messages,
+    chunk_text_for_streaming,
     docs_to_context_entries,
     invoke_retriever_with_retry,
     latest_user_query,
-    token_to_text,
 )
 from app.graphs.types import GraphState
 from app.models import ContextEntry
-from app.retriever import get_retriever
+from app.retriever import BM25Config, SemanticConfig, get_bm25_retriever, get_hybrid_retriever, get_semantic_retriever
 
 log = logging.getLogger(__name__)
 
-retriever = get_retriever()
+# retriever = get_semantic_retriever(SemanticConfig(k=4))
+retriever = get_hybrid_retriever([
+    (get_semantic_retriever(SemanticConfig(k=10)), 0.5),
+    (get_bm25_retriever(BM25Config(k=10)), 0.5),
+])
 log.info("Using %s LLM: %s", LLM_PROVIDER, LLM_MODEL)
 llm = get_llm() | StrOutputParser()
 
@@ -67,6 +72,7 @@ def build_graph(*, checkpointer=None):
     return builder.compile()
 
 
+@traceable(name="baseline/stream_answer")
 def stream_answer(
     *,
     messages: list[BaseMessage],
@@ -89,12 +95,12 @@ def stream_answer(
         llm_model=LLM_MODEL,
     )
 
-    llm_stream = get_llm()
+    answer = get_llm().invoke(prompt_messages)
+    chunks = chunk_text_for_streaming(answer if isinstance(answer, str) else answer.content)
 
     def _token_iterator() -> Iterator[str]:
-        for token in llm_stream.stream(prompt_messages):
-            text = token_to_text(token)
-            if text:
-                yield text
+        for chunk in chunks:
+            if chunk:
+                yield chunk
 
     return state.get("retrieved", []), _token_iterator()
