@@ -14,9 +14,9 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 
 from app.graph import graph
 from app.config import (
-    LLM_MODEL, LLM_PROVIDER, 
+    JUDGE_LLM_MODEL, LLM_MODEL, LLM_PROVIDER, 
     EMBEDDING_MODEL, EMBEDDING_PROVIDER,
-    JUDGE_PROVIDER, JUDGE_EMBEDDING_PROVIDER,
+    JUDGE_PROVIDER, JUDGE_EMBEDDING_PROVIDER, RAG_GRAPH_IMPLEMENTATION,
 )
 from evaluation.ragas.ragas_factory import get_ragas_judge_llm, get_ragas_judge_embeddings
 
@@ -26,14 +26,15 @@ EVAL_DATASET_PATH = os.path.abspath(
     # os.path.join(os.path.dirname(__file__), "..", "eval_dataset.json")
     os.path.join(os.path.dirname(__file__), "..", "question-sets", "qset-v2.json")
 )
+
 MAX_Q_RAW = None
 
 ENABLED_RAGAS_METRICS = [
     # "faithfulness",
-    # "context_precision",
-    # "context_recall",
+    "context_precision",
+    "context_recall",
     # "answer_relevance",
-    # "factual_correctness",
+    "factual_correctness",
 ]
 
 
@@ -265,9 +266,11 @@ with mlflow.start_run():
         "embedding_provider": EMBEDDING_PROVIDER,
         "embedding_model": EMBEDDING_MODEL,
         "judge_provider": JUDGE_PROVIDER,
+        "judge_model": JUDGE_LLM_MODEL,
         "judge_embedding_provider": JUDGE_EMBEDDING_PROVIDER,
         "ragas_version": "0.4.3",
         "num_samples": len(sample_records),
         "ragas_metrics": ",".join(enabled_metric_names),
+        "langchain_graph_type": RAG_GRAPH_IMPLEMENTATION
     })
     print("\nMetrics logged to MLflow ✓")
