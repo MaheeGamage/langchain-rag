@@ -36,6 +36,20 @@ def get_llm():
     raise ValueError(f"Unsupported LLM_PROVIDER: {LLM_PROVIDER!r}")
 
 
+def get_chat_llm():
+    """Return a tool-calling chat model for the configured LLM_PROVIDER.
+
+    Used by graph implementations that rely on native tool calling (e.g. the
+    `rag_agent` graph). For Ollama this returns `ChatOllama` instead of the
+    completion-style `OllamaLLM` returned by `get_llm()`.
+    """
+    if LLM_PROVIDER == "ollama":
+        from langchain_ollama import ChatOllama
+        return ChatOllama(model=LLM_MODEL, base_url=LLM_BASE_URL)
+
+    return get_llm()
+
+
 def get_embeddings():
     """Return an Embeddings instance for the configured EMBEDDING_PROVIDER."""
 

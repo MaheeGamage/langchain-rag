@@ -22,10 +22,10 @@ from app.retriever import BM25Config, SemanticConfig, get_bm25_retriever, get_hy
 
 log = logging.getLogger(__name__)
 
-MAX_RETRIEVAL_ROUNDS = 2
+MAX_RETRIEVAL_ROUNDS = 1
 retriever = get_hybrid_retriever([
-    (get_semantic_retriever(SemanticConfig(k=10)), 0.5),
-    (get_bm25_retriever(BM25Config(k=10)), 0.5),
+    (get_semantic_retriever(SemanticConfig(k=4, score_threshold=0.55)), 0.5),
+    (get_bm25_retriever(BM25Config(k=4)), 0.5),
 ])
 planner_llm = get_llm() | StrOutputParser()
 generator_llm = get_llm() | StrOutputParser()

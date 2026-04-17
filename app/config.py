@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 _VALID_PROVIDERS = ("ollama", "openai", "gemini")
-_VALID_GRAPH_IMPLEMENTATIONS = ("baseline", "agentic")
+_VALID_GRAPH_IMPLEMENTATIONS = ("baseline", "agentic", "rag_agent", "query_rewriting")
 
 
 def _parse_bool(name: str, default: str = "false") -> bool:

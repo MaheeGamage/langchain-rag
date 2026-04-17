@@ -19,8 +19,22 @@ log = logging.getLogger(__name__)
 
 @dataclass
 class SemanticConfig:
-    """Configuration for vector-similarity (semantic) retrieval."""
+    """Configuration for vector-similarity (semantic) retrieval.
+
+    score_threshold: relevance score lower bound (0–1, higher = more similar).
+    Documents scoring BELOW this value are dropped before RRF merging.
+    Note: this is a *similarity* score (higher = better), NOT a distance
+    (where lower = better).  LangChain converts ChromaDB's raw L2 distance
+    into this 0–1 relevance scale via similarity_search_with_relevance_scores.
+
+    Use case: for acronym queries (NISQ, VQE, QAOA) the embedding model
+    returns irrelevant MLflow docs at 0.43–0.53.  Setting threshold=0.55
+    drops all semantic results for those queries so BM25 handles them alone.
+    Verify good queries (e.g. "quantum circuit") still score above the
+    threshold before committing a value.  Set to None to disable filtering.
+    """
     k: int = 4
+    score_threshold: float | None = None
 
 
 @dataclass
@@ -32,7 +46,16 @@ class BM25Config:
 # ── Individual retriever factories ────────────────────────────────────────────
 
 def get_semantic_retriever(config: SemanticConfig = SemanticConfig()) -> BaseRetriever:
-    """Standard top-k vector similarity search."""
+    """Standard top-k vector similarity search.
+
+    When config.score_threshold is set, uses similarity_score_threshold
+    search so low-relevance documents are dropped before RRF merging.
+    """
+    if config.score_threshold is not None:
+        return get_vectorstore().as_retriever(
+            search_type="similarity_score_threshold",
+            search_kwargs={"k": config.k, "score_threshold": config.score_threshold},
+        )
     return get_vectorstore().as_retriever(search_kwargs={"k": config.k})
 
 
