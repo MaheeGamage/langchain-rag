@@ -6,6 +6,8 @@ import logging
 import re
 import sys
 
+import json
+
 import streamlit as st
 
 
@@ -80,6 +82,8 @@ Generate the question as a bullet list with the following format:
 Do not output anything else other than the question."""
 
 
+AUTOSAVE_PATH = Path(__file__).parent / "autosave_session.json"
+
 SESSION_KEYS = {
     "context": "",
     "model_used": "",
@@ -100,7 +104,27 @@ SESSION_KEYS = {
 }
 
 
+def _save_session() -> None:
+    data = {key: st.session_state.get(key, default) for key, default in SESSION_KEYS.items()}
+    AUTOSAVE_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def _load_session() -> None:
+    if not AUTOSAVE_PATH.exists():
+        return
+    try:
+        data = json.loads(AUTOSAVE_PATH.read_text(encoding="utf-8"))
+        for key, default in SESSION_KEYS.items():
+            st.session_state[key] = data.get(key, default)
+    except Exception:
+        pass
+
+
 def init_state() -> None:
+    if "_initialized" not in st.session_state:
+        _load_session()
+        st.session_state["_initialized"] = True
+        return
     for key, default in SESSION_KEYS.items():
         if key not in st.session_state:
             st.session_state[key] = default
@@ -291,6 +315,30 @@ def app() -> None:
 
     st.title("Statement Extraction Prompt Builder")
     st.caption("Build sequential prompts only. No LLM API calls are made by this app.")
+
+    autosave_exists = AUTOSAVE_PATH.exists()
+    if st.button(
+        "Clear autosave data" + (" ✓" if autosave_exists else " (no autosave)"),
+        type="secondary",
+        disabled=not autosave_exists,
+    ):
+        st.session_state["_confirm_clear"] = True
+
+    if st.session_state.get("_confirm_clear"):
+        st.warning("This will permanently delete the autosave file and reset all fields. This cannot be undone.")
+        col_yes, col_no = st.columns([1, 4])
+        with col_yes:
+            if st.button("Yes, clear everything", type="primary"):
+                AUTOSAVE_PATH.unlink(missing_ok=True)
+                reset_all()
+                st.session_state["_confirm_clear"] = False
+                st.rerun()
+        with col_no:
+            if st.button("Cancel"):
+                st.session_state["_confirm_clear"] = False
+                st.rerun()
+
+    st.divider()
 
     st.subheader("Run Metadata")
     st.session_state["model_used"] = st.text_input(
@@ -549,6 +597,8 @@ def app() -> None:
             output_path = output_dir / filename
             output_path.write_text(st.session_state["report_markdown"], encoding="utf-8")
             st.success(f"Saved: {output_path}")
+
+    _save_session()
 
 
 def _is_running_in_streamlit() -> bool:
