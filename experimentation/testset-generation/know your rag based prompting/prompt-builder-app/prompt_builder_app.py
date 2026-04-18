@@ -84,9 +84,20 @@ Do not output anything else other than the question."""
 
 AUTOSAVE_PATH = Path(__file__).parent / "autosave_session.json"
 
+QCLASS_OPTIONS = ["fact_single", "summary", "reasoning", "unanswerable"]
+
+SOURCE_TO_QCLASS: dict[str, str] = {
+    "step2_factual": "fact_single",
+    "step3a_summary": "summary",
+    "step3b_reasoning": "reasoning",
+    "manual": "fact_single",
+    "single_step4": "fact_single",
+}
+
 SESSION_KEYS = {
     "context": "",
     "model_used": "",
+    "subdomain": "",
     "step1_prompt": "",
     "theme_output": "",
     "step2_prompt": "",
@@ -161,11 +172,14 @@ def _build_step4_prompt(theme: str, statement: str) -> str:
 
 
 def _ensure_item_schema(item: dict) -> dict:
+    source = item.get("source", "manual")
     return {
-        "source": item.get("source", "manual"),
+        "source": source,
         "statement": item.get("statement", ""),
         "prompt": item.get("prompt", ""),
         "question": item.get("question", ""),
+        "expected_response": item.get("expected_response", ""),
+        "q_class": item.get("q_class", SOURCE_TO_QCLASS.get(source, "fact_single")),
     }
 
 
@@ -304,6 +318,24 @@ def build_report_markdown() -> str:
 """
 
 
+def build_question_set_json() -> str:
+    subdomain = st.session_state.get("subdomain", "").strip()
+    records = [_ensure_item_schema(item) for item in st.session_state.get("step4_items", [])]
+    output = []
+    for record in records:
+        if not record["question"].strip():
+            continue
+        output.append(
+            {
+                "inputs": {"question": record["question"].strip()},
+                "expectations": {"expected_response": record["expected_response"].strip()},
+                "subdomain": subdomain,
+                "q_class": record["q_class"],
+            }
+        )
+    return json.dumps(output, indent=4)
+
+
 def reset_all() -> None:
     for key, default in SESSION_KEYS.items():
         st.session_state[key] = default
@@ -345,6 +377,11 @@ def app() -> None:
         "Model used for external runs (for logging)",
         value=st.session_state["model_used"],
         placeholder="Example: gemini-2.5-flash",
+    )
+    st.session_state["subdomain"] = st.text_input(
+        "Subdomain (applied to all exported questions)",
+        value=st.session_state["subdomain"],
+        placeholder="Example: nisq_constraints_and_qsd_constraints",
     )
 
     col_a, col_b = st.columns([1, 1])
@@ -525,6 +562,8 @@ def app() -> None:
                         "statement": statement,
                         "prompt": _build_step4_prompt(st.session_state["theme_output"], statement),
                         "question": "",
+                        "expected_response": "",
+                        "q_class": SOURCE_TO_QCLASS.get(source, "fact_single"),
                     }
                 )
 
@@ -559,6 +598,26 @@ def app() -> None:
                     key=f"step4_question_{idx}",
                 )
                 st.session_state["step4_items"][idx]["question"] = question_value
+
+                col_er, col_qc = st.columns([3, 1])
+                with col_er:
+                    er_value = st.text_area(
+                        f"Expected Response #{idx + 1}",
+                        value=item["expected_response"],
+                        height=90,
+                        key=f"step4_expected_{idx}",
+                        placeholder="Paste the ground-truth answer for the question set export.",
+                    )
+                    st.session_state["step4_items"][idx]["expected_response"] = er_value
+                with col_qc:
+                    current_qclass = item["q_class"] if item["q_class"] in QCLASS_OPTIONS else "fact_single"
+                    qc_value = st.selectbox(
+                        f"Question Class #{idx + 1}",
+                        options=QCLASS_OPTIONS,
+                        index=QCLASS_OPTIONS.index(current_qclass),
+                        key=f"step4_qclass_{idx}",
+                    )
+                    st.session_state["step4_items"][idx]["q_class"] = qc_value
 
     st.divider()
 
@@ -597,6 +656,36 @@ def app() -> None:
             output_path = output_dir / filename
             output_path.write_text(st.session_state["report_markdown"], encoding="utf-8")
             st.success(f"Saved: {output_path}")
+
+    st.divider()
+
+    st.header("Export Question Set JSON")
+    st.caption("Exports all Step 4 records that have a question filled in, in qset format.")
+
+    if st.button("Build Question Set JSON"):
+        st.session_state["_qset_json"] = build_question_set_json()
+
+    qset_json = st.session_state.get("_qset_json", "")
+    if qset_json:
+        parsed = json.loads(qset_json)
+        st.info(f"{len(parsed)} question(s) ready for export.")
+        st.text_area("Question Set JSON", value=qset_json, height=320)
+        col_dl, col_save = st.columns(2)
+        with col_dl:
+            st.download_button(
+                label="Download qset JSON",
+                data=qset_json,
+                file_name=f"qset-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json",
+                mime="application/json",
+            )
+        with col_save:
+            if st.button("Save qset JSON to prompt_runs/"):
+                output_dir = Path(__file__).parent / "prompt_runs"
+                output_dir.mkdir(parents=True, exist_ok=True)
+                filename = f"qset-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
+                output_path = output_dir / filename
+                output_path.write_text(qset_json, encoding="utf-8")
+                st.success(f"Saved: {output_path}")
 
     _save_session()
 

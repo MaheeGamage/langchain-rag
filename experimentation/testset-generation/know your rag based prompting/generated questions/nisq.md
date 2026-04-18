@@ -1,8 +1,13 @@
-This contain "NISQ constraints & QSD challenges" subdomain question preparation
+# Prompt Building Run Log
 
-# Theme extraction:
+## Metadata
+- Datetime: 2026-04-17T18:17:10+03:00
+- Model used: Gemini 3.1 Pro
+- Step 3 variants: Summary (Step 3A), Reasoning (Step 3B)
 
-## Theme text:
+## Inputs
+### Initial Context
+
 ```
 ## 3 The potential of quantum computing 
 
@@ -46,90 +51,30 @@ Physicists are excited about this NISQ technology, which gives us new tools for 
 I’ve emphasized the number of qubits as a measure of how difficult it is to do the simulation of a quantum computer on a classical device, but the number of qubits isn’t the only thing we care about. We also care about the _quality_ of the qubits, and in particular the accuracy with which we can perform quantum gates — well-controlled entangling operations acting on pairs of qubits. With the best hardware we have now for controlling trapped ions [14] or superconducting circuits [15], the error rate per gate for two-qubit gates is above the _._ 1% level (and often much worse). Furthermore, we don’t yet know whether error rates that low can be maintained in larger devices with many qubits; perhaps we’ll find out soon. Naively, then, and as I’ll say later this might be too naive, with these noisy devices we don’t expect to be able to execute a circuit that contains many more than about 1000 gates — that is, 1000 fundamental two-qubit operations — because the noise will overwhelm the signal in a circuit much larger than that. That limitation on circuit size imposes a ceiling on the computational power of NISQ technology. Eventually we’ll do better, using quantum error correction to scale up to larger circuits. But as I’ve already emphasized, since quantum error correction imposes a heavy overhead cost in number of qubits and number of gates, scaling up using quantum error correction is a more distant goal. When I speak of the NISQ era, I’m imagining quantum computers with noisy gates unprotected by quantum error correction. 
 
 There are other things we care about, too, aside from the number of qubits and the gate error rate. The time it takes to execute a single gate is also important for setting the time scale needed for a quantum computer to solve a problem, and it is noteworthy that superconducting circuits are about a thousand times faster than ion trap quantum processors. We need to be able to prepare and measure qubits accurately; currently the measurement error probability is about 1% for superconducting qubits, and much better than that for trapped ions. We care about the connectivity among the qubits — for which pairs of qubits in our device can we perform an accurate two-qubit gate? It is also important to know how reliably we can fabricate qubits — if we attempt to construct a many-qubit device, how many of the qubits actually perform well enough to be useful? These considerations and others, too, should be kept in mind when we make comparisons across different quantum computing platforms.
+
 ```
 
-## Theme Prompt:
-```
-In a few words, extract the main theme behind the following passage: [[{ context}]]
-```
-
-## Theme Prompt Output:
-Model used: Gemini 3.1 Pro
-```
+### Identified Theme
 The main theme is the immense potential, practical challenges, and current transitional "NISQ" era of quantum computing.
-```
 
-# Statement Extraction
+### Theme Output (from Step 1 model run)
+The main theme is the immense potential, practical challenges, and current transitional "NISQ" era of quantum computing.
 
-## Factual statements
+## Questions Table
 
-### Factual statements prompt
+Model for generating these questions: Gemini 3 Flash
 
-```
-Extract at most five factual statements based on the following passage and its theme. You need to strictly comply with the following guidelines: 
-
-- Each statement must contain a single unit of factual information.  
-- Each statement must be written in the style of an answer to a factual question. 
-- Each statement must be understandable without the aid of any other source of information. 
-- Each statement must include contextual information derived from the passage theme. 
-- Each statement must only contain information that exists in the original passage and theme. 
-- Each statement must be independent from the other statements.  
-
-Generate the statements as a bullet list with the following format: 
-> Statement 
-> Statement etc  
-
-Theme: [[The main theme is the immense potential, practical challenges, and current transitional "NISQ" era of quantum computing.]] 
-Passage: [[{context}]]
-```
-
-### Factual Statement prompt Output
-Model used: Gemini 3.1 Pro
-```
-Quantum bits, or qubits, are the fundamental information-carrying components of a quantum computer and can be physically realized through entities such as single atoms, electrons, photons, or superconducting electrical circuits.
-
-The current "NISQ" era of quantum computing is defined by Noisy Intermediate-Scale Quantum devices that possess between 50 and a few hundred qubits but lack the protection of quantum error correction.
-
-Quantum computers are expected to solve certain classically intractable problems, such as finding the prime factors of large composite integers, more efficiently than any known classical algorithm.
-
-A significant practical challenge in quantum computing is the requirement to keep qubits nearly perfectly isolated from the outside world to prevent uncontrollable disturbances while still allowing them to interact for information processing.
-
-Quantum computers are not expected to efficiently solve all difficult problems, as hard combinatorial search tasks like the traveling salesman problem are likely to remain quantumly hard despite the potential for modest speedups.
-```
-
-## Summary statements
-
-### Summary statements prompt
-```
-Merge the following sentences into three summary statements. 
-Each summary statement must summarise information contained in more than one sentence. 
-Each summary statement must be independent and non-overlapping. 
-Each summary statement should be a complete sentence. 
-Each summary statement can include contextual information contained in the theme below. 
-Each summary statement must be understandable without the aid of any other source of information.  
-
-Generate the statements as a bullet list with the following format: 
-> Summary statement 
-> Summary statement 
-> Summary statement  
-
-Theme: [[The main theme is the immense potential, practical challenges, and current transitional "NISQ" era of quantum computing.]]
-
-Sentences:[[ Quantum bits, or qubits, are the fundamental information-carrying components of a quantum computer and can be physically realized through entities such as single atoms, electrons, photons, or superconducting electrical circuits.
-
-The current "NISQ" era of quantum computing is defined by Noisy Intermediate-Scale Quantum devices that possess between 50 and a few hundred qubits but lack the protection of quantum error correction.
-
-Quantum computers are expected to solve certain classically intractable problems, such as finding the prime factors of large composite integers, more efficiently than any known classical algorithm.
-
-A significant practical challenge in quantum computing is the requirement to keep qubits nearly perfectly isolated from the outside world to prevent uncontrollable disturbances while still allowing them to interact for information processing.
-
-Quantum computers are not expected to efficiently solve all difficult problems, as hard combinatorial search tasks like the traveling salesman problem are likely to remain quantumly hard despite the potential for modest speedups. ]]
-```
-
-### Summary statements prompt Output
-Model used: Gemini 3.1 Pro
-```
-The current transitional "NISQ" era of quantum computing is defined by devices that utilize between 50 and a few hundred physically realized qubits—such as single atoms, electrons, photons, or superconducting circuits—as their fundamental information-carrying components.
-A major practical challenge in quantum computing is the current absence of quantum error correction, requiring the nearly perfect isolation of these sensitive systems from uncontrollable outside disturbances without preventing the interactions needed for information processing.
-Although the technology possesses the immense potential to efficiently overcome classically intractable problems like discovering the prime factors of large composite integers, it is not anticipated to provide efficient solutions for hard combinatorial search tasks like the traveling salesman problem.
-```
+| # | Source | Theme | Statement | Question |
+|---|---|---|---|---|
+| 1 | step2_factual | The main theme is the immense potential, practical challenges, and current transitional "NISQ" era of quantum computing. | Quantum bits, or qubits, are the fundamental information-carrying components of a quantum computer and can be physically realized through entities such as single atoms, electrons, photons, or superconducting electrical circuits. | What physical entities are used to create the qubits currently powering the NISQ era of quantum computing? |
+| 2 | step2_factual | The main theme is the immense potential, practical challenges, and current transitional "NISQ" era of quantum computing. | The current "NISQ" era of quantum computing is defined by Noisy Intermediate-Scale Quantum devices that possess between 50 and a few hundred qubits but lack the protection of quantum error correction. | What are the defining qubit counts and error correction limitations of NISQ era quantum devices? |
+| 3 | step2_factual | The main theme is the immense potential, practical challenges, and current transitional "NISQ" era of quantum computing. | Quantum computers are expected to solve certain classically intractable problems, such as finding the prime factors of large composite integers, more efficiently than any known classical algorithm. | How does the transitional NISQ era's goal of solving classically intractable problems apply to finding prime factors of large composite integers? |
+| 4 | step2_factual | The main theme is the immense potential, practical challenges, and current transitional "NISQ" era of quantum computing. | A significant practical challenge in quantum computing is the requirement to keep qubits nearly perfectly isolated from the outside world to prevent uncontrollable disturbances while still allowing them to interact for information processing. | How do NISQ era quantum computers manage the conflict between qubit isolation and information processing? |
+| 5 | step2_factual | The main theme is the immense potential, practical challenges, and current transitional "NISQ" era of quantum computing. | Quantum computers are not expected to efficiently solve all difficult problems, as hard combinatorial search tasks like the traveling salesman problem are likely to remain quantumly hard despite the potential for modest speedups. | How does the NISQ era transition affect the efficiency of solving NP-hard combinatorial problems like the traveling salesman task on quantum hardware? |
+| 6 | step3a_summary | The main theme is the immense potential, practical challenges, and current transitional "NISQ" era of quantum computing. | During the current transitional "NISQ" era, quantum computing devices are constructed using up to a few hundred physical entities, such as single atoms or superconducting circuits, but currently operate without the vital protection of quantum error correction. | What are the physical components and error correction status of devices in the NISQ era of quantum computing? |
+| 7 | step3a_summary | The main theme is the immense potential, practical challenges, and current transitional "NISQ" era of quantum computing. | The fundamental information-carrying components of a quantum computer, known as qubits, pose a major practical challenge because they must be kept nearly perfectly isolated from external disturbances while simultaneously interacting to process information. | Why do qubits present a significant engineering hurdle during the current NISQ era of quantum computing? |
+| 8 | step3a_summary | The main theme is the immense potential, practical challenges, and current transitional "NISQ" era of quantum computing. | Although holding the immense potential to efficiently tackle classically intractable problems like prime factorization, quantum computers are not a universal tool and are unlikely to efficiently resolve hard combinatorial search tasks such as the traveling salesman problem. | Given the current NISQ era's limitations, what are the specific classically intractable problems that quantum computers are unlikely to efficiently resolve? |
+| 9 | step3b_reasoning | The main theme is the immense potential, practical challenges, and current transitional "NISQ" era of quantum computing. | The lack of quantum error correction that characterizes the current NISQ era is a direct consequence of the physical difficulty in isolating delicate components, such as single atoms or photons, from uncontrollable environmental noise. | Why does environmental noise prevent quantum error correction in the current NISQ era? |
+| 10 | step3b_reasoning | The main theme is the immense potential, practical challenges, and current transitional "NISQ" era of quantum computing. | Despite their immense potential for specific applications like prime factorization, quantum computers represent a specialized computational advancement rather than a universal tool capable of efficiently solving all mathematically intractable challenges. | What are the limitations of quantum computers in the NISQ era regarding universal problem-solving and prime factorization? |
+| 11 | step3b_reasoning | The main theme is the immense potential, practical challenges, and current transitional "NISQ" era of quantum computing. | Advancing beyond the current transitional phase of intermediate-scale devices will necessitate engineering breakthroughs that successfully balance the contradictory requirements of perfectly shielding physical qubits from external disturbances while still allowing them to interact for information processing. | What engineering breakthroughs are required to advance quantum computing beyond the NISQ era? |
+| 12 | single_step4 | The main theme is the immense potential, practical challenges, and current transitional "NISQ" era of quantum computing. | The current "NISQ" era of quantum computing is defined by Noisy Intermediate-Scale Quantum devices that possess between 50 and a few hundred qubits but lack the protection of quantum error correction. | Not provided |

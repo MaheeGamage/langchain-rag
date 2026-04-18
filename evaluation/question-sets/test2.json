@@ -1,0 +1,42 @@
+[
+  {
+    "inputs": {
+      "question": "What does the acronym NISQ stand for?"
+    },
+    "expectations": {
+      "expected_response": "Noisy Intermediate-Scale Quantum"
+    },
+    "subdomain": "Quantum Computing Fundamentals",
+    "q_class": "fact_single"
+  },
+  {
+    "inputs": {
+      "question": "Which open-source platform, originally used in ML/AI, is proposed as the foundation for the quantum experiment tracking system?"
+    },
+    "expectations": {
+      "expected_response": "MLflow"
+    },
+    "subdomain": "Experiment Tracking Tools",
+    "q_class": "fact_single"
+  },
+  {
+    "inputs": {
+      "question": "What is the QProv Field ID assigned to Circuit Size?"
+    },
+    "expectations": {
+      "expected_response": "Q6"
+    },
+    "subdomain": "Quantum Provenance (QProv)",
+    "q_class": "fact_single"
+  },
+  {
+    "inputs": {
+      "question": "How many top-level categories are defined in the QProv provenance model?"
+    },
+    "expectations": {
+      "expected_response": "Four (Quantum Circuit, Quantum Computer, Compilation, and Execution)"
+    },
+    "subdomain": "Quantum Provenance (QProv)",
+    "q_class": "fact_single"
+  }
+]
