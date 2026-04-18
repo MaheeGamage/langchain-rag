@@ -24,17 +24,19 @@ from evaluation.ragas.ragas_factory import get_ragas_judge_llm, get_ragas_judge_
 EVAL_DATASET_PATH = os.path.abspath(
     # os.path.join(os.path.dirname(__file__), "..", "mlflow", "eval_dataset.json")
     # os.path.join(os.path.dirname(__file__), "..", "eval_dataset.json")
-    os.path.join(os.path.dirname(__file__), "..", "question-sets", "qset-v2.json")
+    # os.path.join(os.path.dirname(__file__), "..", "question-sets", "test3.json")
+    os.path.join(os.path.dirname(__file__), "..", "question-sets", "exp", "test5.json")
 )
 
 MAX_Q_RAW = None
 
 ENABLED_RAGAS_METRICS = [
     # "faithfulness",
-    "context_precision",
+    # "context_precision",
     "context_recall",
     # "answer_relevance",
-    "factual_correctness",
+    # "factual_correctness",
+    "factual_correctness_recall"
 ]
 
 
@@ -143,6 +145,7 @@ answer_relevance_metric = AnswerRelevancy(llm=llm, embeddings=embeddings)
 context_precision_metric = ContextPrecision(llm=llm)
 context_recall_metric = ContextRecall(llm=llm)
 factual_correctness_metric = FactualCorrectness(llm=llm)
+factual_correctness_recall_metric = FactualCorrectness(llm=llm, mode="recall")
 
 metric_scorers = {
     "faithfulness": lambda sample: faithfulness_metric.ascore(
@@ -165,6 +168,10 @@ metric_scorers = {
         retrieved_contexts=sample.retrieved_contexts,
     ),
     "factual_correctness": lambda sample: factual_correctness_metric.ascore(
+        response=sample.response,
+        reference=sample.reference,
+    ),
+    "factual_correctness_recall": lambda sample: factual_correctness_recall_metric.ascore(
         response=sample.response,
         reference=sample.reference,
     ),
