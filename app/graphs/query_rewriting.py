@@ -9,17 +9,19 @@ from langchain_core.output_parsers import StrOutputParser
 from langgraph.graph import END, StateGraph
 from mlflow.entities import SpanType
 
-from app.config import LLM_MODEL, LLM_PROVIDER
-from app.factory import get_llm
+from app.config import HELPER_LLM_MODEL, HELPER_LLM_PROVIDER, LLM_MODEL, LLM_PROVIDER
+from app.factory import get_helper_llm, get_llm
 from app.graphs.common import (
     build_messages,
     chunk_text_for_streaming,
     docs_to_context_entries,
+    invoke_llm_with_retry,
     invoke_retriever_with_retry,
     latest_user_query,
 )
 from app.graphs.types import GraphState
 from app.models import ContextEntry
+from app.prompts.query_rewrite import REWRITE_PROMPT
 from app.retriever import BM25Config, SemanticConfig, get_bm25_retriever, get_hybrid_retriever, get_semantic_retriever
 
 log = logging.getLogger(__name__)
@@ -29,18 +31,9 @@ retriever = get_hybrid_retriever([
     (get_bm25_retriever(BM25Config(k=4)), 0.5),
 ])
 log.info("Using %s LLM: %s", LLM_PROVIDER, LLM_MODEL)
+log.info("Using %s helper LLM: %s", HELPER_LLM_PROVIDER, HELPER_LLM_MODEL)
 llm = get_llm() | StrOutputParser()
-
-_REWRITE_PROMPT = (
-    "You are a search query optimizer. Rewrite the user's question into a concise, "
-    "keyword-rich query optimized for semantic and keyword search over a knowledge base "
-    "about MLflow experiment tracking and quantum software development.\n\n"
-    "Rules:\n"
-    "- Return ONLY the rewritten query, nothing else.\n"
-    "- Keep it short (one sentence or phrase).\n"
-    "- Preserve domain-specific terms (e.g. NISQ, VQE, QAOA, MLflow).\n\n"
-    "User question: {question}"
-)
+helper_llm = get_helper_llm() | StrOutputParser()
 
 
 class QueryRewritingState(GraphState, total=False):
@@ -50,7 +43,7 @@ class QueryRewritingState(GraphState, total=False):
 def rewrite_query(state: QueryRewritingState):
     question = latest_user_query(state["messages"])
     t = time.perf_counter()
-    rewritten = llm.invoke(_REWRITE_PROMPT.format(question=question)).strip()
+    rewritten = helper_llm.invoke(REWRITE_PROMPT.substitute(question=question)).strip()
     log.info("Rewrote query in %.2fs: %r -> %r", time.perf_counter() - t, question, rewritten)
     return {"rewritten_query": rewritten or question}
 
@@ -123,7 +116,7 @@ def stream_answer(
         llm_model=LLM_MODEL,
     )
 
-    answer = get_llm().invoke(prompt_messages)
+    answer = invoke_llm_with_retry(get_llm(), prompt_messages, log)
     chunks = chunk_text_for_streaming(answer if isinstance(answer, str) else answer.content)
 
     def _token_iterator() -> Iterator[str]:

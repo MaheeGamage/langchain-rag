@@ -1,5 +1,6 @@
 import logging
 import time
+from string import Template
 from typing import Iterable
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
@@ -15,6 +16,30 @@ and how to apply them using mlflow by using it's sdks in quantum software experi
 Provide clear, concise answers based on the context provided. But don't mention
 this to the user when you answer. If the context doesn't contain the information
 needed to answer the question, say you don't know."""
+
+BASE_PROMPT_V1 = BASE_PROMPT
+
+SYSTEM_TEMPLATE_V2 = Template("""\
+You are a specialized expert in quantum software development and experiment tracking using MLflow.
+Your role is to help users understand experiment tracking concepts and apply them \
+using the MLflow SDK in quantum software experiments.
+
+Instructions:
+- Answer questions using strictly the context documents provided below.
+- The answer should answer the user's question directly and concisely, without restating the question or adding unnecessary information.                              
+- If the answer is not present in or cannot be logically inferred from the context, \
+respond with: "I don't have enough information in my knowledge base to answer this question."
+- Do not use outside knowledge or introduce facts not grounded in the provided context.
+- Format code segments using markdown.
+
+User-provided context:
+$user_context
+
+Retrieved context:
+$rag_context
+
+Answer:
+""")
 
 
 def latest_user_query(messages: list[BaseMessage]) -> str:
@@ -45,6 +70,25 @@ def invoke_retriever_with_retry(retriever, query: str, log: logging.Logger, max_
             time.sleep(backoff_s)
 
     raise RuntimeError(f"Retriever invoke failed after {max_attempts} attempts: {last_exc}") from last_exc
+
+
+def invoke_llm_with_retry(llm, prompt, log: logging.Logger, max_attempts: int = 3):
+    """Retry LLM calls for transient transport failures (e.g. connection reset)."""
+    last_exc: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return llm.invoke(prompt)
+        except Exception as exc:
+            last_exc = exc
+            if attempt == max_attempts:
+                break
+            backoff_s = 0.25 * (2 ** (attempt - 1))
+            log.warning(
+                "LLM invoke failed (attempt %d/%d): %s. Retrying in %.2fs",
+                attempt, max_attempts, exc, backoff_s,
+            )
+            time.sleep(backoff_s)
+    raise RuntimeError(f"LLM invoke failed after {max_attempts} attempts: {last_exc}") from last_exc
 
 
 def docs_to_context_entries(docs: Iterable) -> list[ContextEntry]:
@@ -95,13 +139,10 @@ def build_messages(
             user_context_parts.append(f"{header}\n{entry.content}")
     user_context = "\n\n".join(user_context_parts)
 
-    system_parts = [BASE_PROMPT]
-    if user_context:
-        system_parts.append(f"User-provided context:\n{user_context}")
-    if rag_context:
-        system_parts.append(f"Retrieved context:\n{rag_context}")
-
-    system_content = "\n\n".join(system_parts)
+    system_content = SYSTEM_TEMPLATE_V2.substitute(
+        user_context=user_context or "None",
+        rag_context=rag_context or "None",
+    )
 
     if "gemma" in llm_model.lower():
         full_messages: list[BaseMessage] = [

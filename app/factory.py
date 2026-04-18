@@ -9,9 +9,20 @@ changes here and in config.py.
 LLM and Embedding providers are fully independent — any combination works.
 """
 
+import httpx
+
 from .config import (
-    JUDGE_LLM_MODEL, JUDGE_PROVIDER, LLM_PROVIDER, LLM_MODEL, LLM_API_KEY, LLM_BASE_URL,
-    EMBEDDING_PROVIDER, EMBEDDING_MODEL, EMBEDDING_API_KEY, EMBEDDING_BASE_URL
+    JUDGE_LLM_MODEL, JUDGE_PROVIDER,
+    HELPER_LLM_PROVIDER, HELPER_LLM_MODEL, HELPER_LLM_API_KEY, HELPER_LLM_BASE_URL,
+    LLM_PROVIDER, LLM_MODEL, LLM_API_KEY, LLM_BASE_URL,
+    EMBEDDING_PROVIDER, EMBEDDING_MODEL, EMBEDDING_API_KEY, EMBEDDING_BASE_URL,
+    HTTP_KEEPALIVE_EXPIRY_S, HTTP_TIMEOUT_S,
+)
+
+_OLLAMA_HTTPX_LIMITS = httpx.Limits(
+    max_connections=None,
+    max_keepalive_connections=None,
+    keepalive_expiry=HTTP_KEEPALIVE_EXPIRY_S,
 )
 
 
@@ -20,7 +31,11 @@ def get_llm():
 
     if LLM_PROVIDER == "ollama":
         from langchain_ollama import OllamaLLM
-        return OllamaLLM(model=LLM_MODEL, base_url=LLM_BASE_URL) #, num_predict=512)
+        return OllamaLLM(
+            model=LLM_MODEL,
+            base_url=LLM_BASE_URL,
+            sync_client_kwargs={"limits": _OLLAMA_HTTPX_LIMITS},
+        )
 
     if LLM_PROVIDER == "openai":
         from langchain_openai import ChatOpenAI
@@ -36,6 +51,34 @@ def get_llm():
     raise ValueError(f"Unsupported LLM_PROVIDER: {LLM_PROVIDER!r}")
 
 
+def get_helper_llm():
+    """Return a lightweight LLM for query rewriting, routing, and classification.
+
+    Uses HELPER_LLM_PROVIDER / HELPER_LLM_MODEL, falling back to the main LLM when
+    no dedicated helper model is configured.
+    """
+    if HELPER_LLM_PROVIDER == "ollama":
+        from langchain_ollama import OllamaLLM
+        return OllamaLLM(
+            model=HELPER_LLM_MODEL,
+            base_url=HELPER_LLM_BASE_URL,
+            sync_client_kwargs={"limits": _OLLAMA_HTTPX_LIMITS},
+        )
+
+    if HELPER_LLM_PROVIDER == "openai":
+        from langchain_openai import ChatOpenAI
+        kwargs: dict = {"model": HELPER_LLM_MODEL, "api_key": HELPER_LLM_API_KEY}
+        if HELPER_LLM_BASE_URL:
+            kwargs["base_url"] = HELPER_LLM_BASE_URL
+        return ChatOpenAI(**kwargs)
+
+    if HELPER_LLM_PROVIDER == "gemini":
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        return ChatGoogleGenerativeAI(model=HELPER_LLM_MODEL, google_api_key=HELPER_LLM_API_KEY)
+
+    raise ValueError(f"Unsupported HELPER_LLM_PROVIDER: {HELPER_LLM_PROVIDER!r}")
+
+
 def get_chat_llm():
     """Return a tool-calling chat model for the configured LLM_PROVIDER.
 
@@ -45,7 +88,11 @@ def get_chat_llm():
     """
     if LLM_PROVIDER == "ollama":
         from langchain_ollama import ChatOllama
-        return ChatOllama(model=LLM_MODEL, base_url=LLM_BASE_URL)
+        return ChatOllama(
+            model=LLM_MODEL,
+            base_url=LLM_BASE_URL,
+            client_kwargs={"limits": _OLLAMA_HTTPX_LIMITS},
+        )
 
     return get_llm()
 
@@ -55,7 +102,11 @@ def get_embeddings():
 
     if EMBEDDING_PROVIDER == "ollama":
         from langchain_ollama import OllamaEmbeddings
-        return OllamaEmbeddings(model=EMBEDDING_MODEL, base_url=EMBEDDING_BASE_URL)
+        return OllamaEmbeddings(
+            model=EMBEDDING_MODEL,
+            base_url=EMBEDDING_BASE_URL,
+            sync_client_kwargs={"limits": _OLLAMA_HTTPX_LIMITS},
+        )
 
     if EMBEDDING_PROVIDER == "openai":
         from langchain_openai import OpenAIEmbeddings
