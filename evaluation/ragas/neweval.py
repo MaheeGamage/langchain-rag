@@ -28,7 +28,10 @@ EVAL_DATASET_PATH = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "question-sets", "exp", "test5.json")
 )
 
-MAX_Q_RAW = None
+MAX_Q_RAW = 1
+Q_INDICES_RAW = None       # e.g. "0,3,7"
+FILTER_SUBDOMAIN = None #"qprov_provenance_taxonomy" #os.environ.get("FILTER_SUBDOMAIN")
+FILTER_Q_CLASS = None
 
 ENABLED_RAGAS_METRICS = [
     # "faithfulness",
@@ -42,11 +45,13 @@ ENABLED_RAGAS_METRICS = [
 
 def load_eval_dataset() -> list[dict[str, str]]:
     """Load eval dataset and normalize to {'user_input', 'reference'} shape."""
-    dataset_path = EVAL_DATASET_PATH
-    
     max_q = int(MAX_Q_RAW) if MAX_Q_RAW else None
+    q_indices = (
+        [int(i.strip()) for i in Q_INDICES_RAW.split(",") if i.strip()]
+        if Q_INDICES_RAW else None
+    )
 
-    with open(dataset_path, "r", encoding="utf-8") as f:
+    with open(EVAL_DATASET_PATH, "r", encoding="utf-8") as f:
         raw_items = json.load(f)
 
     normalized = []
@@ -64,7 +69,13 @@ def load_eval_dataset() -> list[dict[str, str]]:
                 "question_class": question_class,
             })
 
-    if max_q is not None:
+    if FILTER_SUBDOMAIN:
+        normalized = [q for q in normalized if q["subdomain"] == FILTER_SUBDOMAIN]
+    if FILTER_Q_CLASS:
+        normalized = [q for q in normalized if q["question_class"] == FILTER_Q_CLASS]
+    if q_indices is not None:
+        normalized = [normalized[i] for i in q_indices if i < len(normalized)]
+    elif max_q is not None:
         normalized = normalized[:max_q]
 
     return normalized
@@ -105,7 +116,16 @@ print(f"Using {EMBEDDING_PROVIDER} embeddings: {EMBEDDING_MODEL}")
 print(f"Using {JUDGE_PROVIDER} judge LLM for evaluation")
 print(f"Using {JUDGE_EMBEDDING_PROVIDER} judge embeddings for evaluation")
 print(f"Loaded {len(eval_dataset)} evaluation questions")
-print("Tip: set MAX_Q to limit questions, e.g. MAX_Q=3")
+if FILTER_SUBDOMAIN:
+    print(f"  Filter: subdomain={FILTER_SUBDOMAIN}")
+if FILTER_Q_CLASS:
+    print(f"  Filter: q_class={FILTER_Q_CLASS}")
+if Q_INDICES_RAW:
+    print(f"  Filter: Q_INDICES={Q_INDICES_RAW}")
+elif MAX_Q_RAW:
+    print(f"  Filter: MAX_Q={MAX_Q_RAW}")
+else:
+    print("  Tip: filter with MAX_Q=N, Q_INDICES=0,3,7, FILTER_SUBDOMAIN=x, FILTER_Q_CLASS=x")
 print("\nRunning RAG on evaluation questions...")
 
 # Build samples by running RAG for each question
