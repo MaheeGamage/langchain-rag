@@ -1,45 +1,11 @@
 import logging
 import time
-from string import Template
 from typing import Iterable
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
 from app.models import ContextEntry
-
-BASE_PROMPT = """You are an AI assistant for an experiment tracking system built around MLflow,
-repurposed to track experiments in quantum software development.
-
-Your role is to help users understand how to use experiment tracking concepts
-and how to apply them using mlflow by using it's sdks in quantum software experiments.
-
-Provide clear, concise answers based on the context provided. But don't mention
-this to the user when you answer. If the context doesn't contain the information
-needed to answer the question, say you don't know."""
-
-BASE_PROMPT_V1 = BASE_PROMPT
-
-SYSTEM_TEMPLATE_V2 = Template("""\
-You are a specialized expert in quantum software development and experiment tracking using MLflow.
-Your role is to help users understand experiment tracking concepts and apply them \
-using the MLflow SDK in quantum software experiments.
-
-Instructions:
-- Answer questions using strictly the context documents provided below.
-- The answer should answer the user's question directly and concisely, without restating the question or adding unnecessary information.                              
-- If the answer is not present in or cannot be logically inferred from the context, \
-respond with: "I don't have enough information in my knowledge base to answer this question."
-- Do not use outside knowledge or introduce facts not grounded in the provided context.
-- Format code segments using markdown.
-
-User-provided context:
-$user_context
-
-Retrieved context:
-$rag_context
-
-Answer:
-""")
+from app.prompts.generate_prompt import GENERATOR_PROMPT
 
 
 def latest_user_query(messages: list[BaseMessage]) -> str:
@@ -139,7 +105,7 @@ def build_messages(
             user_context_parts.append(f"{header}\n{entry.content}")
     user_context = "\n\n".join(user_context_parts)
 
-    system_content = SYSTEM_TEMPLATE_V2.substitute(
+    system_content = GENERATOR_PROMPT.substitute(
         user_context=user_context or "None",
         rag_context=rag_context or "None",
     )

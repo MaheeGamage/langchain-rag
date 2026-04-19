@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import Iterator
+from typing import Iterator, Literal
 
 from langchain.agents import create_agent
 from langchain_core.documents import Document
@@ -10,48 +10,61 @@ from langchain_core.tools import tool
 from app.config import LLM_MODEL, LLM_PROVIDER
 from app.factory import get_chat_llm
 from app.graphs.common import (
-    BASE_PROMPT,
     chunk_text_for_streaming,
     docs_to_context_entries,
     invoke_retriever_with_retry,
 )
+from app.prompts.generate_prompt import SYSTEM_TEMPLATE_V1
 from app.models import ContextEntry
-from app.retriever import (
-    BM25Config,
-    SemanticConfig,
-    get_bm25_retriever,
-    get_hybrid_retriever,
-    get_semantic_retriever,
-)
+from app.retriever import PROFILE_DESCRIPTIONS, get_profile_retriever
 
 log = logging.getLogger(__name__)
 
-retriever = get_hybrid_retriever([
-    (get_semantic_retriever(SemanticConfig(k=5, score_threshold=0.55)), 0.5),
-    (get_bm25_retriever(BM25Config(k=5)), 0.5),
-])
+RetrievalProfile = Literal["default", "acronym", "conceptual", "overview", "reasoning", "reranked"]
+
+_PROFILE_HELP = "\n".join(f"  - \"{name}\": {desc}" for name, desc in PROFILE_DESCRIPTIONS.items())
 
 AGENT_SYSTEM_PROMPT = (
-    BASE_PROMPT
+    SYSTEM_TEMPLATE_V1
     + "\n\nYou have a `retrieve_context` tool that searches the knowledge base. "
     "Call it whenever the user's question requires factual information you do not "
     "already have. You may call it multiple times with refined queries if the first "
     "result is insufficient. Once you have enough context, answer directly without "
-    "calling the tool again."
+    "calling the tool again.\n\n"
+    "When you call `retrieve_context`, pick the `profile` argument that best matches "
+    "the question shape:\n" + _PROFILE_HELP
 )
 
 
 @tool(response_format="content_and_artifact")
-def retrieve_context(query: str) -> tuple[str, list[Document]]:
+def retrieve_context(
+    query: str,
+    profile: RetrievalProfile = "default",
+) -> tuple[str, list[Document]]:
     """Search the MLflow + quantum software experiment knowledge base.
 
     Args:
         query: A focused search query. Reformulate the user's question into
             keywords or a short phrase that captures what to look up.
+        profile: Retrieval strategy. Pick the best match for the question:
+            - "default":    balanced 50/50 hybrid; use when unsure.
+            - "acronym":    BM25-heavy, k=6; for acronyms (NISQ, VQE) or exact
+                            API names (mlflow.log_param).
+            - "conceptual": semantic-heavy, k=4; for definitions and explanations.
+            - "overview":   k=10; for summary/taxonomy/listing questions that
+                            need broad context.
+            - "reasoning":  k=8; for multi-hop reasoning needing several
+                            supporting facts.
+            - "reranked":   k=10 each then cross-encoder rerank to top 4;
+                            higher latency, best precision on hard queries.
     """
     t = time.perf_counter()
+    retriever = get_profile_retriever(profile)
     docs = invoke_retriever_with_retry(retriever, query, log)
-    log.info("rag_agent retrieve: %d chunks in %.2fs", len(docs), time.perf_counter() - t)
+    log.info(
+        "rag_agent retrieve[%s]: %d chunks in %.2fs",
+        profile, len(docs), time.perf_counter() - t,
+    )
 
     serialised = "\n\n".join(
         f"[{d.metadata.get('source', 'unknown')}]\n{d.page_content}" for d in docs

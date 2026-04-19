@@ -20,15 +20,16 @@ from app.graphs.common import (
 )
 from app.graphs.types import GraphState
 from app.models import ContextEntry
-from app.retriever import BM25Config, SemanticConfig, get_bm25_retriever, get_hybrid_retriever, get_semantic_retriever
+from app.retriever import BM25Config, HybridConfig, SemanticConfig, build_hybrid_retriever
 
 log = logging.getLogger(__name__)
 
-# retriever = get_semantic_retriever(SemanticConfig(k=4))
-retriever = get_hybrid_retriever([
-    (get_semantic_retriever(SemanticConfig(k=4, score_threshold=0.55)), 0.5),
-    (get_bm25_retriever(BM25Config(k=4)), 0.5),
-])
+retriever = build_hybrid_retriever(HybridConfig(
+    semantic=SemanticConfig(k=4, score_threshold=0.55),
+    bm25=BM25Config(k=4),
+    semantic_weight=0.5,
+    bm25_weight=0.5,
+))
 log.info("Using %s LLM: %s", LLM_PROVIDER, LLM_MODEL)
 llm = get_llm() | StrOutputParser()
 

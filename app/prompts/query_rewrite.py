@@ -27,5 +27,31 @@ REWRITE_PROMPT_V2 = Template(
     "User question: $question"
 )
 
-# Active version — switch by reassigning to REWRITE_PROMPT_V1 or REWRITE_PROMPT_V2.
-REWRITE_PROMPT = REWRITE_PROMPT_V2
+# V3 — extends V2 with retrieval-profile selection.  The helper LLM now emits
+# both a rewritten query AND a named profile (default/acronym/conceptual/
+# overview/reasoning) so the graph can pick a retriever tuned to the question.
+REWRITE_PROMPT_V3 = Template(
+    "You are a search query optimizer. Rewrite the user's question into a concise, "
+    "keyword-rich search query AND select the retrieval strategy that best fits it.\n\n"
+    "Rules:\n"
+    "- Preserve technical terms and API names (e.g. mlflow.log_param, NISQ, VQE).\n"
+    "- Strip context-framing clauses like 'in the context of X', 'for X application' "
+    "— focus on what information is being sought, not where it will be used.\n"
+    "- Return EXACTLY two lines, nothing else:\n"
+    "  QUERY: <rewritten query>\n"
+    "  PROFILE: <one of: default, acronym, conceptual, overview, reasoning, reranked>\n\n"
+    "Profile menu:\n"
+    "- default:    balanced 50/50 hybrid; use when unsure.\n"
+    "- acronym:    BM25-heavy; for acronyms (NISQ, VQE, QAOA) or exact API names "
+    "(mlflow.log_param, start_run).\n"
+    "- conceptual: semantic-heavy; for definitions, explanations, 'what is X' questions.\n"
+    "- overview:   large k; for summary / listing / taxonomy questions needing broad context.\n"
+    "- reasoning:  large k; for multi-hop 'why' / 'how does X affect Y' questions needing "
+    "several supporting facts.\n"
+    "- reranked:   wide retrieve + cross-encoder rerank; pick for hard / ambiguous queries "
+    "where precision matters more than latency.\n\n"
+    "User question: $question"
+)
+
+# Active version — switch by reassigning to REWRITE_PROMPT_V1, V2, or V3.
+REWRITE_PROMPT = REWRITE_PROMPT_V3

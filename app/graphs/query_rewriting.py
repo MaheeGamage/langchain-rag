@@ -1,4 +1,5 @@
 import logging
+import re
 import time
 from typing import Iterator
 
@@ -22,14 +23,19 @@ from app.graphs.common import (
 from app.graphs.types import GraphState
 from app.models import ContextEntry
 from app.prompts.query_rewrite import REWRITE_PROMPT
-from app.retriever import BM25Config, SemanticConfig, get_bm25_retriever, get_hybrid_retriever, get_semantic_retriever
+from app.retriever import PROFILE_NAMES, get_profile_retriever
 
 log = logging.getLogger(__name__)
 
-retriever = get_hybrid_retriever([
-    (get_semantic_retriever(SemanticConfig(k=4, score_threshold=0.55)), 0.5),
-    (get_bm25_retriever(BM25Config(k=4)), 0.5),
-])
+# Pre-profile-era fixed retriever — kept as a comment for reference.  To restore
+# exact previous behaviour (single fixed k=4, threshold=0.55, whitespace BM25),
+# swap `get_profile_retriever(profile)` in retrieve() for this:
+#   from app.retriever import BM25Config, HybridConfig, SemanticConfig, build_hybrid_retriever
+#   _LEGACY_RETRIEVER_V1 = build_hybrid_retriever(HybridConfig(
+#       semantic=SemanticConfig(k=4, score_threshold=0.55),
+#       bm25=BM25Config(k=4),
+#       semantic_weight=0.5, bm25_weight=0.5,
+#   ))
 log.info("Using %s LLM: %s", LLM_PROVIDER, LLM_MODEL)
 log.info("Using %s helper LLM: %s", HELPER_LLM_PROVIDER, HELPER_LLM_MODEL)
 llm = get_llm() | StrOutputParser()
@@ -38,22 +44,63 @@ helper_llm = get_helper_llm() | StrOutputParser()
 
 class QueryRewritingState(GraphState, total=False):
     rewritten_query: str
+    retrieval_profile: str
+
+
+_QUERY_RE = re.compile(r"QUERY\s*:\s*(.+)", re.IGNORECASE)
+_PROFILE_RE = re.compile(r"PROFILE\s*:\s*([A-Za-z_]+)", re.IGNORECASE)
+
+
+def _parse_rewrite(raw: str, fallback_query: str) -> tuple[str, str]:
+    """Parse the helper LLM's output into (query, profile).
+
+    Tolerant of V2-style single-line output: if no ``QUERY:`` prefix is found,
+    the whole stripped string is treated as the query and profile falls back
+    to "default".  Unknown profile names also fall back to "default".
+    """
+    q_match = _QUERY_RE.search(raw)
+    p_match = _PROFILE_RE.search(raw)
+
+    if q_match:
+        query = q_match.group(1).strip()
+    else:
+        # V2-style output (no QUERY: prefix) — treat the whole thing as query,
+        # but drop any trailing PROFILE: line if present.
+        query = _PROFILE_RE.sub("", raw).strip()
+    if not query:
+        query = fallback_query
+
+    profile = p_match.group(1).strip().lower() if p_match else "default"
+    if profile not in PROFILE_NAMES:
+        log.warning("Helper LLM picked unknown profile %r; using 'default'", profile)
+        profile = "default"
+
+    return query, profile
 
 
 def rewrite_query(state: QueryRewritingState):
     question = latest_user_query(state["messages"])
     t = time.perf_counter()
-    rewritten = helper_llm.invoke(REWRITE_PROMPT.substitute(question=question)).strip()
-    log.info("Rewrote query in %.2fs: %r -> %r", time.perf_counter() - t, question, rewritten)
-    return {"rewritten_query": rewritten or question}
+    raw = helper_llm.invoke(REWRITE_PROMPT.substitute(question=question))
+    query, profile = _parse_rewrite(raw, fallback_query=question)
+    log.info(
+        "Rewrote in %.2fs: %r -> query=%r profile=%s",
+        time.perf_counter() - t, question, query, profile,
+    )
+    return {"rewritten_query": query, "retrieval_profile": profile}
 
 
 @mlflow.trace(span_type=SpanType.RETRIEVER)
 def retrieve(state: QueryRewritingState):
     query = state.get("rewritten_query") or latest_user_query(state["messages"])
+    profile = state.get("retrieval_profile", "default")
+    retriever = get_profile_retriever(profile)
     t = time.perf_counter()
     docs = invoke_retriever_with_retry(retriever, query, log)
-    log.info("Retrieved %d chunks in %.2fs", len(docs), time.perf_counter() - t)
+    log.info(
+        "Retrieved[%s] %d chunks in %.2fs",
+        profile, len(docs), time.perf_counter() - t,
+    )
 
     retrieved = docs_to_context_entries(docs)
     return {"retrieved": retrieved}
@@ -72,11 +119,18 @@ def generate(state: QueryRewritingState):
     return {"messages": [AIMessage(content=answer)]}
 
 
-def build_graph(*, checkpointer=None):
+def build_graph(*, checkpointer=None, profile_selection: bool = True):
     builder = StateGraph(QueryRewritingState)
 
     builder.add_node("rewrite_query", rewrite_query)
-    builder.add_node("retrieve", retrieve)
+
+    if profile_selection:
+        builder.add_node("retrieve", retrieve)
+    else:
+        def _retrieve_default_profile(state: QueryRewritingState):
+            return retrieve({**state, "retrieval_profile": "default"})
+        builder.add_node("retrieve", _retrieve_default_profile)
+
     builder.add_node("generate", generate)
 
     builder.set_entry_point("rewrite_query")
@@ -96,6 +150,7 @@ def stream_answer(
     context_entries: list[ContextEntry],
     graph_instance=None,
     config: dict | None = None,
+    profile_selection: bool = True,
 ) -> tuple[list[ContextEntry], Iterator[str]]:
     state: QueryRewritingState = {
         "messages": messages,
@@ -105,6 +160,9 @@ def stream_answer(
 
     rewrite_result = rewrite_query(state)
     state.update(rewrite_result)
+
+    if not profile_selection:
+        state["retrieval_profile"] = "default"
 
     retrieval_result = retrieve(state)
     state.update(retrieval_result)
