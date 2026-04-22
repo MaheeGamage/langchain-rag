@@ -1,0 +1,102 @@
+[
+  {
+    "inputs": {
+      "question": "I'm logging the circuit width for QProv compliance. Should I just use circuit.width() to get that value?"
+    },
+    "expectations": {
+      "expected_response": "No, you should use circuit.num_qubits to log Q4 — Circuit Width. circuit.width() includes both qubits and classical bits, while QProv defines width as the number of qubits only."
+    },
+    "subdomain": "Quantum Computing Fundamentals",
+    "q_class": "concept_application"
+  },
+  {
+    "inputs": {
+      "question": "Is it possible to log intermediate results for a standard Bell state circuit execution?"
+    },
+    "expectations": {
+      "expected_response": "No, intermediate results are only collectible for variational algorithms such as VQE or QAOA. Standard circuits cannot provide intermediate results because measurement collapses superposition."
+    },
+    "subdomain": "Quantum Computing Fundamentals",
+    "q_class": "concept_validation"
+  },
+  {
+    "inputs": {
+      "question": "What function should I use to get a list of all the gates in my circuit for an MLflow parameter log?"
+    },
+    "expectations": {
+      "expected_response": "You should use circuit.count_ops(), which returns a mapping of gate names to their counts."
+    },
+    "subdomain": "Quantum Computing Fundamentals",
+    "q_class": "fact_single"
+  },
+  {
+    "inputs": {
+      "question": "I'm running Zero-Noise Extrapolation (ZNE) to improve my results. Should I log this under the QProv E7 field?"
+    },
+    "expectations": {
+      "expected_response": "No, E7 is reserved for readout-error mitigation techniques only. Zero-Noise Extrapolation is a gate-error mitigation method and is outside the QProv scope."
+    },
+    "subdomain": "Quantum Computing Fundamentals",
+    "q_class": "concept_application"
+  },
+  {
+    "inputs": {
+      "question": "How do I ensure my transpilation process is reproducible when logging it to MLflow?"
+    },
+    "expectations": {
+      "expected_response": "You must set a fixed seed using the seed_transpiler argument in qiskit.transpile() to ensure reproducibility."
+    },
+    "subdomain": "Quantum Computing Fundamentals",
+    "q_class": "concept_application"
+  },
+  {
+    "inputs": {
+      "question": "What is the specific qubit count threshold that defines the start of the \"intermediate scale\" in the NISQ era?"
+    },
+    "expectations": {
+      "expected_response": "The intermediate scale begins at around 50 qubits."
+    },
+    "subdomain": "Quantum Computing Fundamentals",
+    "q_class": "fact_single"
+  },
+  {
+    "inputs": {
+      "question": "Where can I find the T1 and T2 times of my IBM backend to log them for my experiment?"
+    },
+    "expectations": {
+      "expected_response": "You can retrieve them using backend.properties().t1(qubit) and backend.properties().t2(qubit)."
+    },
+    "subdomain": "Quantum Computing Fundamentals",
+    "q_class": "fact_single"
+  },
+  {
+    "inputs": {
+      "question": "Which circuit property should I use if I want to log the total number of gate operations?"
+    },
+    "expectations": {
+      "expected_response": "You should use circuit.size(), which returns the total number of gate operations."
+    },
+    "subdomain": "Quantum Computing Fundamentals",
+    "q_class": "fact_single"
+  },
+  {
+    "inputs": {
+      "question": "What MLflow function should I call to save a histogram of my execution counts?"
+    },
+    "expectations": {
+      "expected_response": "Use mlflow.log_figure() to log the histogram as a figure artifact."
+    },
+    "subdomain": "MLOps for Quantum",
+    "q_class": "fact_single"
+  },
+  {
+    "inputs": {
+      "question": "I'm logging my transpile optimization level. Which QProv category does this parameter belong to?"
+    },
+    "expectations": {
+      "expected_response": "It belongs to Category 3: Compilation, specifically C3 — Optimization Goals."
+    },
+    "subdomain": "Quantum Computing Fundamentals",
+    "q_class": "fact_single"
+  }
+]

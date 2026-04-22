@@ -47,8 +47,7 @@ summarize, and make direct logical inferences that are clearly supported by it.
 or adding unnecessary information.
 - Before refusing, check whether any retrieved passage partially answers the question; \
 if so, answer with that information and note what is missing.
-- Only respond with "I don't have enough information in my knowledge base to answer \
-this question." when the context contains no information that addresses the question — \
+- Only respond with "I don't have enough information to answer this question." when the context contains no information that addresses the question — \
 not merely when the exact wording is absent.
 - Do not fabricate facts or introduce information that is not grounded in the provided context.
 - Format code segments using markdown.

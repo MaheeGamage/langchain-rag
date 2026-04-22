@@ -7,12 +7,12 @@ import mlflow
 import pandas as pd
 from ragas import EvaluationDataset, SingleTurnSample
 from ragas.metrics.collections import Faithfulness, ContextPrecision, ContextRecall, AnswerRelevancy, FactualCorrectness
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 # Add parent directory to path to import app modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from app.graph import graph
+from app.graph import graph, _stream_answer
 from app.config import (
     JUDGE_LLM_MODEL, LLM_MODEL, LLM_PROVIDER, 
     EMBEDDING_MODEL, EMBEDDING_PROVIDER,
@@ -30,7 +30,7 @@ EVAL_DATASET_PATH = os.path.abspath(
 
 MAX_Q_RAW = 1
 Q_INDICES_RAW = None       # e.g. "0,3,7"
-FILTER_SUBDOMAIN = None #"qprov_provenance_taxonomy" #os.environ.get("FILTER_SUBDOMAIN")
+FILTER_SUBDOMAIN = "qprov_provenance_taxonomy" #os.environ.get("FILTER_SUBDOMAIN")
 FILTER_Q_CLASS = None
 
 ENABLED_RAGAS_METRICS = [
@@ -83,26 +83,24 @@ def load_eval_dataset() -> list[dict[str, str]]:
 def run_rag(question: str) -> dict:
     """Run the RAG pipeline using the actual graph from app/graph.py"""
     config = {"configurable": {"thread_id": str(uuid.uuid4())}}
-    
-    result = graph.invoke(
-        {"messages": question, "context": [], "retrieved": []},
+
+    # Use _stream_answer so retrieved docs are extracted correctly for every
+    # graph implementation. For rag_agent the documents live in ToolMessage
+    # artifacts, not in a top-level "retrieved" state key.
+    retrieved, token_iter = _stream_answer(
+        messages=[HumanMessage(content=question)],
+        context_entries=[],
+        graph_instance=graph,
         config=config,
     )
-    
-    # Extract the answer from the last AIMessage
-    answer = ""
-    for m in reversed(result["messages"]):
-        if isinstance(m, AIMessage):
-            answer = m.content
-            break
-    
-    # Extract retrieved contexts
+    answer = "".join(token_iter)
+
     retrieved_contexts = [
         entry.content
-        for entry in result.get("retrieved", [])
+        for entry in retrieved
         if getattr(entry, "content", None)
     ]
-    
+
     return {
         "response": answer,
         "retrieved_contexts": retrieved_contexts,
