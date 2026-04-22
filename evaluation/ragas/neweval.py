@@ -7,16 +7,16 @@ import mlflow
 import pandas as pd
 from ragas import EvaluationDataset, SingleTurnSample
 from ragas.metrics.collections import Faithfulness, ContextPrecision, ContextRecall, AnswerRelevancy, FactualCorrectness
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 # Add parent directory to path to import app modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from app.graph import graph
+from app.graph import graph, _stream_answer
 from app.config import (
-    LLM_MODEL, LLM_PROVIDER, 
+    JUDGE_LLM_MODEL, LLM_MODEL, LLM_PROVIDER, 
     EMBEDDING_MODEL, EMBEDDING_PROVIDER,
-    JUDGE_PROVIDER, JUDGE_EMBEDDING_PROVIDER,
+    JUDGE_PROVIDER, JUDGE_EMBEDDING_PROVIDER, RAG_GRAPH_IMPLEMENTATION,
 )
 from evaluation.ragas.ragas_factory import get_ragas_judge_llm, get_ragas_judge_embeddings
 
@@ -24,26 +24,34 @@ from evaluation.ragas.ragas_factory import get_ragas_judge_llm, get_ragas_judge_
 EVAL_DATASET_PATH = os.path.abspath(
     # os.path.join(os.path.dirname(__file__), "..", "mlflow", "eval_dataset.json")
     # os.path.join(os.path.dirname(__file__), "..", "eval_dataset.json")
-    os.path.join(os.path.dirname(__file__), "..", "question-sets", "qset-v2.json")
+    # os.path.join(os.path.dirname(__file__), "..", "question-sets", "test3.json")
+    os.path.join(os.path.dirname(__file__), "..", "question-sets", "exp", "test5.json")
 )
-MAX_Q_RAW = None
+
+MAX_Q_RAW = 1
+Q_INDICES_RAW = None       # e.g. "0,3,7"
+FILTER_SUBDOMAIN = "qprov_provenance_taxonomy" #os.environ.get("FILTER_SUBDOMAIN")
+FILTER_Q_CLASS = None
 
 ENABLED_RAGAS_METRICS = [
     # "faithfulness",
     # "context_precision",
-    # "context_recall",
+    "context_recall",
     # "answer_relevance",
     # "factual_correctness",
+    "factual_correctness_recall"
 ]
 
 
 def load_eval_dataset() -> list[dict[str, str]]:
     """Load eval dataset and normalize to {'user_input', 'reference'} shape."""
-    dataset_path = EVAL_DATASET_PATH
-    
     max_q = int(MAX_Q_RAW) if MAX_Q_RAW else None
+    q_indices = (
+        [int(i.strip()) for i in Q_INDICES_RAW.split(",") if i.strip()]
+        if Q_INDICES_RAW else None
+    )
 
-    with open(dataset_path, "r", encoding="utf-8") as f:
+    with open(EVAL_DATASET_PATH, "r", encoding="utf-8") as f:
         raw_items = json.load(f)
 
     normalized = []
@@ -61,7 +69,13 @@ def load_eval_dataset() -> list[dict[str, str]]:
                 "question_class": question_class,
             })
 
-    if max_q is not None:
+    if FILTER_SUBDOMAIN:
+        normalized = [q for q in normalized if q["subdomain"] == FILTER_SUBDOMAIN]
+    if FILTER_Q_CLASS:
+        normalized = [q for q in normalized if q["question_class"] == FILTER_Q_CLASS]
+    if q_indices is not None:
+        normalized = [normalized[i] for i in q_indices if i < len(normalized)]
+    elif max_q is not None:
         normalized = normalized[:max_q]
 
     return normalized
@@ -69,26 +83,24 @@ def load_eval_dataset() -> list[dict[str, str]]:
 def run_rag(question: str) -> dict:
     """Run the RAG pipeline using the actual graph from app/graph.py"""
     config = {"configurable": {"thread_id": str(uuid.uuid4())}}
-    
-    result = graph.invoke(
-        {"messages": question, "context": [], "retrieved": []},
+
+    # Use _stream_answer so retrieved docs are extracted correctly for every
+    # graph implementation. For rag_agent the documents live in ToolMessage
+    # artifacts, not in a top-level "retrieved" state key.
+    retrieved, token_iter = _stream_answer(
+        messages=[HumanMessage(content=question)],
+        context_entries=[],
+        graph_instance=graph,
         config=config,
     )
-    
-    # Extract the answer from the last AIMessage
-    answer = ""
-    for m in reversed(result["messages"]):
-        if isinstance(m, AIMessage):
-            answer = m.content
-            break
-    
-    # Extract retrieved contexts
+    answer = "".join(token_iter)
+
     retrieved_contexts = [
         entry.content
-        for entry in result.get("retrieved", [])
+        for entry in retrieved
         if getattr(entry, "content", None)
     ]
-    
+
     return {
         "response": answer,
         "retrieved_contexts": retrieved_contexts,
@@ -102,7 +114,16 @@ print(f"Using {EMBEDDING_PROVIDER} embeddings: {EMBEDDING_MODEL}")
 print(f"Using {JUDGE_PROVIDER} judge LLM for evaluation")
 print(f"Using {JUDGE_EMBEDDING_PROVIDER} judge embeddings for evaluation")
 print(f"Loaded {len(eval_dataset)} evaluation questions")
-print("Tip: set MAX_Q to limit questions, e.g. MAX_Q=3")
+if FILTER_SUBDOMAIN:
+    print(f"  Filter: subdomain={FILTER_SUBDOMAIN}")
+if FILTER_Q_CLASS:
+    print(f"  Filter: q_class={FILTER_Q_CLASS}")
+if Q_INDICES_RAW:
+    print(f"  Filter: Q_INDICES={Q_INDICES_RAW}")
+elif MAX_Q_RAW:
+    print(f"  Filter: MAX_Q={MAX_Q_RAW}")
+else:
+    print("  Tip: filter with MAX_Q=N, Q_INDICES=0,3,7, FILTER_SUBDOMAIN=x, FILTER_Q_CLASS=x")
 print("\nRunning RAG on evaluation questions...")
 
 # Build samples by running RAG for each question
@@ -142,6 +163,7 @@ answer_relevance_metric = AnswerRelevancy(llm=llm, embeddings=embeddings)
 context_precision_metric = ContextPrecision(llm=llm)
 context_recall_metric = ContextRecall(llm=llm)
 factual_correctness_metric = FactualCorrectness(llm=llm)
+factual_correctness_recall_metric = FactualCorrectness(llm=llm, mode="recall")
 
 metric_scorers = {
     "faithfulness": lambda sample: faithfulness_metric.ascore(
@@ -164,6 +186,10 @@ metric_scorers = {
         retrieved_contexts=sample.retrieved_contexts,
     ),
     "factual_correctness": lambda sample: factual_correctness_metric.ascore(
+        response=sample.response,
+        reference=sample.reference,
+    ),
+    "factual_correctness_recall": lambda sample: factual_correctness_recall_metric.ascore(
         response=sample.response,
         reference=sample.reference,
     ),
@@ -265,9 +291,11 @@ with mlflow.start_run():
         "embedding_provider": EMBEDDING_PROVIDER,
         "embedding_model": EMBEDDING_MODEL,
         "judge_provider": JUDGE_PROVIDER,
+        "judge_model": JUDGE_LLM_MODEL,
         "judge_embedding_provider": JUDGE_EMBEDDING_PROVIDER,
         "ragas_version": "0.4.3",
         "num_samples": len(sample_records),
         "ragas_metrics": ",".join(enabled_metric_names),
+        "langchain_graph_type": RAG_GRAPH_IMPLEMENTATION
     })
     print("\nMetrics logged to MLflow ✓")

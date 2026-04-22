@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 _VALID_PROVIDERS = ("ollama", "openai", "gemini")
-_VALID_GRAPH_IMPLEMENTATIONS = ("baseline", "agentic")
+_VALID_GRAPH_IMPLEMENTATIONS = ("baseline", "agentic", "rag_agent", "query_rewriting")
 
 
 def _parse_bool(name: str, default: str = "false") -> bool:
@@ -29,6 +29,7 @@ def _parse_int(name: str, default: str) -> int:
 # Set these in .env.  They are fully independent — mix any combination.
 # LLM_PROVIDER       controls which service answers questions.
 # EMBEDDING_PROVIDER controls which service encodes text into vectors.
+# HELPER_LLM_PROVIDER    controls which service handles lightweight tasks (query rewriting, routing, etc.).
 # JUDGE_PROVIDER     controls which service is used for evaluation LLM.
 # JUDGE_EMBEDDING_PROVIDER controls which service is used for evaluation embeddings.
 LLM_PROVIDER:       str = os.getenv("LLM_PROVIDER",       "ollama")
@@ -36,12 +37,15 @@ EMBEDDING_PROVIDER: str = os.getenv("EMBEDDING_PROVIDER", "ollama")
 JUDGE_PROVIDER:     str = os.getenv("JUDGE_PROVIDER",     "ollama")
 # Graph switch (single source of truth for which graph implementation is exported)
 RAG_GRAPH_IMPLEMENTATION: str = os.getenv("RAG_GRAPH_IMPLEMENTATION", "baseline").strip().lower()
+# Default to LLM_PROVIDER if not explicitly set (backward compatibility)
+HELPER_LLM_PROVIDER: str = os.getenv("HELPER_LLM_PROVIDER", LLM_PROVIDER)
 # Default to JUDGE_PROVIDER if not explicitly set (backward compatibility)
 JUDGE_EMBEDDING_PROVIDER: str = os.getenv("JUDGE_EMBEDDING_PROVIDER", JUDGE_PROVIDER)
 
 for _p, _name in (
     (LLM_PROVIDER, "LLM_PROVIDER"),
     (EMBEDDING_PROVIDER, "EMBEDDING_PROVIDER"),
+    (HELPER_LLM_PROVIDER, "HELPER_LLM_PROVIDER"),
     (JUDGE_PROVIDER, "JUDGE_PROVIDER"),
     (JUDGE_EMBEDDING_PROVIDER, "JUDGE_EMBEDDING_PROVIDER"),
 ):
@@ -65,6 +69,7 @@ CHROMA_SSL: bool = _parse_bool("CHROMA_SSL", "false")
 _LLM_DEFAULTS: dict = {
     "ollama": {
         "model":   os.getenv("OLLAMA_LLM_MODEL",  "tinyllama"),
+        "helper_llm_model": os.getenv("OLLAMA_HELPER_LLM_MODEL", None),
         "judge_model": os.getenv("OLLAMA_JUDGE_LLM_MODEL", None),
         "judge_embedding_model": os.getenv("OLLAMA_JUDGE_EMBEDDING_MODEL", None),
         "api_key": None,
@@ -72,6 +77,7 @@ _LLM_DEFAULTS: dict = {
     },
     "openai": {
         "model":   os.getenv("OPENAI_LLM_MODEL",  "gpt-4o-mini"),
+        "helper_llm_model": os.getenv("OPENAI_HELPER_LLM_MODEL", None),
         "judge_model": os.getenv("OPENAI_JUDGE_LLM_MODEL", None),
         "judge_embedding_model": os.getenv("OPENAI_JUDGE_EMBEDDING_MODEL", None),
         "api_key": os.getenv("OPENAI_API_KEY",    ""),
@@ -79,6 +85,7 @@ _LLM_DEFAULTS: dict = {
     },
     "gemini": {
         "model":   os.getenv("GEMINI_LLM_MODEL",  "gemini-2.5-flash"),
+        "helper_llm_model": os.getenv("GEMINI_HELPER_LLM_MODEL", None),
         "judge_model": os.getenv("GEMINI_JUDGE_LLM_MODEL", None),
         "judge_embedding_model": os.getenv("GEMINI_JUDGE_EMBEDDING_MODEL", None),
         "api_key": os.getenv("GEMINI_API_KEY",    ""),
@@ -111,6 +118,14 @@ LLM_MODEL:    str       = _llm["model"]
 LLM_API_KEY:  str | None = _llm["api_key"]
 LLM_BASE_URL: str | None = _llm["base_url"]
 
+# ── Resolved Helper LLM values ────────────────────────────────────────────────
+# Helper LLM is used for lightweight tasks: query rewriting, routing, classification.
+# Falls back to the main LLM model when HELPER_LLM_MODEL / OLLAMA_HELPER_LLM_MODEL etc. are unset.
+_helper_llm = _LLM_DEFAULTS[HELPER_LLM_PROVIDER]
+HELPER_LLM_MODEL:    str       = _helper_llm.get("helper_llm_model") or _helper_llm["model"]
+HELPER_LLM_API_KEY:  str | None = _helper_llm["api_key"]
+HELPER_LLM_BASE_URL: str | None = _helper_llm["base_url"]
+
 # ── Resolved Embedding values ─────────────────────────────────────────────────
 _emb = _EMBEDDING_DEFAULTS[EMBEDDING_PROVIDER]
 EMBEDDING_MODEL:    str       = _emb["model"]
@@ -135,6 +150,13 @@ JUDGE_EMBEDDING_BASE_URL: str | None = _judge_emb["base_url"]
 COLLECTION_NAME: str = (
     EMBEDDING_MODEL.replace("/", "_").replace("-", "_").replace(".", "_")
 )
+
+# ── HTTP connection tuning ────────────────────────────────────────────────────
+# Docker's conntrack drops idle TCP connections after ~30s. httpx's default
+# keepalive_expiry=40s causes stale-connection reuse and ~30s stalls. Setting
+# expiry below the Docker NAT timeout ensures connections are closed proactively.
+HTTP_KEEPALIVE_EXPIRY_S: float = float(os.getenv("HTTP_KEEPALIVE_EXPIRY_S", "15"))
+HTTP_TIMEOUT_S: float = float(os.getenv("HTTP_TIMEOUT_S", "10"))
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 DATA_PATH: str = "./data"

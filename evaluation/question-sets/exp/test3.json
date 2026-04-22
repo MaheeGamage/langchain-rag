@@ -1,0 +1,42 @@
+[
+  {
+    "inputs": {
+      "question": "If I'm logging my circuit width to stay compliant with QProv Q4, should I just use the .width() method in Qiskit?"
+    },
+    "expectations": {
+      "expected_response": "No, you should use circuit.num_qubits. Qiskit's .width() method returns the sum of qubits and classical bits combined, whereas the QProv Q4 specification specifically refers only to the number of qubits."
+    },
+    "subdomain": "Quantum Circuit Properties",
+    "q_class": "fact_single"
+  },
+  {
+    "inputs": {
+      "question": "What are the key steps to perform readout error mitigation within this tracking framework?"
+    },
+    "expectations": {
+      "expected_response": "The process involves several specific steps: First, execute calibration circuits that prepare every possible basis state to measure the hardware's response. Second, use those results to construct a calibration matrix. Third, invert this matrix and apply it to the raw output counts of your experiment to get the mitigated distribution. Finally, you must log the specific technique used in the MLflow 'readout_mitigation' parameter (QProv E7) to ensure the experiment is reproducible and comparable."
+    },
+    "subdomain": "Error Mitigation & Execution",
+    "q_class": "summary"
+  },
+  {
+    "inputs": {
+      "question": "I'm trying to benchmark how different optimization levels (C3) affect my circuit depth. Do I actually need to fix the random seed (C4) in my logs, or is that overkill?"
+    },
+    "expectations": {
+      "expected_response": "You should fix and log the random seed to ensure your benchmark is valid. Because the transpiler uses stochastic algorithms for layout and routing, the same circuit can be compiled into different physical versions even if the optimization level remains the same. Without a fixed seed, you cannot determine if a change in circuit depth was caused by your optimization setting or simply by a different random routing path."
+    },
+    "subdomain": "Compilation & Reproducibility",
+    "q_class": "reasoning"
+  },
+  {
+    "inputs": {
+      "question": "Does the VTT QX service charge a flat fee per month, or is it based on the number of shots I run on the IQM 50-qubit machine?"
+    },
+    "expectations": {
+      "expected_response": "I don't have enough information to answer this based on the available documentation."
+    },
+    "subdomain": "Experiment Management",
+    "q_class": "unanswerable"
+  }
+]

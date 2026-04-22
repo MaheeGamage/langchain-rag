@@ -1,0 +1,202 @@
+[
+    {
+        "inputs": {
+            "question": "How many qubits are typically found in a NISQ-era quantum computer?"
+        },
+        "expectations": {
+            "expected_response": "Quantum computers in the NISQ era typically contain between 50 and a few hundred qubits"
+        },
+        "subdomain": "nisq_constraints_and_qsd_constraints",
+        "q_class": "fact_single"
+    },
+    {
+        "inputs": {
+            "question": "What are the primary challenges quantum researchers face when dealing with hardware in the current NISQ era?"
+        },
+        "expectations": {
+            "expected_response": "Researchers must manage a limited number of qubits that are highly prone to noise and computational errors. Hardware characteristics such as decoherence times and gate fidelities are unstable and change significantly between recalibrations. Restricted connectivity between qubits further complicates the development process by necessitating the insertion of additional gates during the compilation stage"
+        },
+        "subdomain": "nisq_constraints_and_qsd_constraints",
+        "q_class": "summary"
+    },
+    {
+        "inputs": {
+            "question": "Why does the accuracy of my results typically drop as I increase the depth of my quantum circuit?"
+        },
+        "expectations": {
+            "expected_response": "Increasing circuit depth leads to lower accuracy because the total execution time is more likely to exceed the qubits' decoherence window and the accumulation of individual gate errors overwhelms the final signal"
+        },
+        "subdomain": "nisq_constraints_and_qsd_constraints",
+        "q_class": "reasoning"
+    },
+    {
+        "inputs": {
+            "question": "What is the specific hourly cost for accessing the IQM 50-qubit processor through the VTT QX service?"
+        },
+        "expectations": {
+            "expected_response": "The information is not available in the provided sources."
+        },
+        "subdomain": "nisq_constraints_and_qsd_constraints",
+        "q_class": "unanswerable"
+    },
+    {
+        "inputs": {
+            "question": "What is the fundamental unit of organization for tracking executions in MLflow?"
+        },
+        "expectations": {
+            "expected_response": "MLflow Tracking is organized around the concept of runs, which represent individual executions of data science code."
+        },
+        "subdomain": "experiment_tracking_fundamentals",
+        "q_class": "fact_single"
+    },
+    {
+        "inputs": {
+            "question": "What does the experiment tracking process actually involve for a developer?"
+        },
+        "expectations": {
+            "expected_response": "Experiment tracking is the systematic process of recording, managing, and analyzing all relevant information from each experimental run, including datasets, parameters, and metrics. It involves collecting provenance data across four specific categories: quantum circuit, quantum computer, compilation, and execution. These collected artifacts ensure reproducibility and provide a structured view of how performance goals are met during the development cycle."
+        },
+        "subdomain": "experiment_tracking_fundamentals",
+        "q_class": "summary"
+    },
+    {
+        "inputs": {
+            "question": "If my quantum algorithm's source code hasn't changed at all between executions, why is it still considered a best practice to log every single execution as a unique run in MLflow?"
+        },
+        "expectations": {
+            "expected_response": "Logging every execution is necessary because the inherent noise and varying reliability of current quantum hardware mean that identical code can produce different results at different times. This continuous data collection allows developers to distinguish between actual algorithmic improvements and temporary fluctuations in hardware performance or qubit calibration."
+        },
+        "subdomain": "experiment_tracking_fundamentals",
+        "q_class": "reasoning"
+    },
+    {
+        "inputs": {
+            "question": "What is the maximum storage capacity in gigabytes for the MLflow artifact store when using a local file system?"
+        },
+        "expectations": {
+            "expected_response": "The provided sources do not contain information regarding the specific storage capacity limits for the MLflow artifact store on local file systems."
+        },
+        "subdomain": "experiment_tracking_fundamentals",
+        "q_class": "unanswerable"
+    },
+    {
+        "inputs": {
+            "question": "Does the QProv definition of circuit width include classical bits?"
+        },
+        "expectations": {
+            "expected_response": "The QProv specification defines circuit width as the number of qubits used in the circuit, specifically excluding classical bits."
+        },
+        "subdomain": "qprov_provenance_taxonomy",
+        "q_class": "fact_single"
+    },
+    {
+        "inputs": {
+            "question": "Can you give me an overview of the four main categories in the QProv taxonomy?"
+        },
+        "expectations": {
+            "expected_response": "The QProv taxonomy is divided into the Quantum Circuit, Quantum Computer, Compilation, and Execution categories. These four groups capture metadata ranging from the logical structure of the circuit and physical hardware properties to the specific transpilation settings and runtime results of an experiment."
+        },
+        "subdomain": "qprov_provenance_taxonomy",
+        "q_class": "summary"
+    },
+    {
+        "inputs": {
+            "question": "Why would my experiment results vary between two different runs if I am using the same logical circuit and the same hardware backend?"
+        },
+        "expectations": {
+            "expected_response": "Variations arise from temporal drifts in hardware characteristics like decoherence times and gate fidelities, combined with stochastic compilation processes that produce different qubit mappings without a fixed random seed. Furthermore, the probabilistic nature of measurement and the use of periodically updated calibration matrices for error mitigation introduce statistical and systematic differences between separate executions."
+        },
+        "subdomain": "qprov_provenance_taxonomy",
+        "q_class": "reasoning"
+    },
+    {
+        "inputs": {
+            "question": "What is the current hourly rate in USD for a premium subscription to the IBM Quantum cloud service?"
+        },
+        "expectations": {
+            "expected_response": "I don't have sufficient information to answer this accurately."
+        },
+        "subdomain": "qprov_provenance_taxonomy",
+        "q_class": "unanswerable"
+    },
+    {
+        "inputs": {
+            "question": "What specific Python function do I need to call to begin a new tracking session for my quantum circuit simulation?"
+        },
+        "expectations": {
+            "expected_response": "You call the mlflow.start_run() function to initiate a new experiment run."
+        },
+        "subdomain": "mlflow_tracking_api",
+        "q_class": "fact_single"
+    },
+    {
+        "inputs": {
+            "question": "Can you summarize what kind of data the MLflow Tracking API actually captures when I execute my code?"
+        },
+        "expectations": {
+            "expected_response": "The MLflow Tracking API allows you to record parameters, code versions, metrics, and artifact files produced during code execution. You can use these recorded components to visualize and compare results across different runs using the MLflow UI or query them programmatically through provided APIs."
+        },
+        "subdomain": "mlflow_tracking_api",
+        "q_class": "summary"
+    },
+    {
+        "inputs": {
+            "question": "If I am using a specialized quantum hardware library that isn't on the autologging support list, how should I track my gates and error rates?"
+        },
+        "expectations": {
+            "expected_response": "You should utilize manual logging functions like mlflow.log_param and mlflow.log_metric since your library is not among the automatically supported frameworks. This approach provides the granular control necessary for tracking custom metrics and parameters in your quantum simulations."
+        },
+        "subdomain": "mlflow_tracking_api",
+        "q_class": "reasoning"
+    },
+    {
+        "inputs": {
+            "question": "How do I configure the MLflow Tracking API to automatically alert my team via Slack if a circuit's gate error exceeds a certain threshold?"
+        },
+        "expectations": {
+            "expected_response": "The provided sources do not contain information regarding the configuration of Slack alerts for gate error thresholds in MLflow."
+        },
+        "subdomain": "mlflow_tracking_api",
+        "q_class": "unanswerable"
+    },
+    {
+        "inputs": {
+            "question": "How do I get the circuit width for QProv logging in Qiskit?"
+        },
+        "expectations": {
+            "expected_response": "To log the circuit width according to QProv standards, you must use the circuit.num_qubits attribute [1, 2]."
+        },
+        "subdomain": "qiskit-specific_experiment_tracking_using_mlflow_and_qprov",
+        "q_class": "fact_single"
+    },
+    {
+        "inputs": {
+            "question": "What circuit-level data should I be tracking to follow QProv guidelines?"
+        },
+        "expectations": {
+            "expected_response": "Logging circuit properties for QProv involves recording gate counts and measurements via count_ops, along with the circuit's width, depth, and size [1-6]. You must also capture the execution order as a QPY artifact and specify the classical data encoding method [2, 4, 6]."
+        },
+        "subdomain": "qiskit-specific_experiment_tracking_using_mlflow_and_qprov",
+        "q_class": "summary"
+    },
+    {
+        "inputs": {
+            "question": "My circuit results are really noisy; does logging T2 times help me figure out why if I already know my circuit depth?"
+        },
+        "expectations": {
+            "expected_response": "Comparing circuit depth and gate times against T2 decoherence times is necessary to ensure the hardware's coherence window is not exceeded during execution [5, 7]."
+        },
+        "subdomain": "qiskit-specific_experiment_tracking_using_mlflow_and_qprov",
+        "q_class": "reasoning"
+    },
+    {
+        "inputs": {
+            "question": "Can I use MLflow to track my job costs in credits for the IBM Quantum platform?"
+        },
+        "expectations": {
+            "expected_response": "The information regarding tracking job costs in credits on the IBM Quantum platform is not available in the provided sources."
+        },
+        "subdomain": "qiskit-specific_experiment_tracking_using_mlflow_and_qprov",
+        "q_class": "unanswerable"
+    }
+]

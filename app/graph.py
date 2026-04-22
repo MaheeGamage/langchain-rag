@@ -33,6 +33,16 @@ _IMPLEMENTATIONS = {
         "build_graph": "build_graph",
         "stream_answer": "stream_answer",
     },
+    "rag_agent": {
+        "module": "app.graphs.rag_agent",
+        "build_graph": "build_graph",
+        "stream_answer": "stream_answer",
+    },
+    "query_rewriting": {
+        "module": "app.graphs.query_rewriting",
+        "build_graph": "build_graph",
+        "stream_answer": "stream_answer",
+    },
 }
 
 

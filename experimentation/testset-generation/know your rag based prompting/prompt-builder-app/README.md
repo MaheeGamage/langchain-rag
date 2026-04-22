@@ -1,0 +1,1 @@
+poetry run streamlit run "experimentation/testset-generation/know your rag based prompting/prompt-builder-app/prompt_builder_app.py"

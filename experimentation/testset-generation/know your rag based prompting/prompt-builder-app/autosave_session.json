@@ -1,0 +1,18 @@
+{
+  "context": "",
+  "model_used": "",
+  "step1_prompt": "",
+  "theme_output": "",
+  "step2_prompt": "",
+  "factual_output": "",
+  "step3a_prompt": "",
+  "step3a_output": "",
+  "step3b_prompt": "",
+  "step3b_output": "",
+  "selected_statement": "",
+  "step4_prompt": "",
+  "final_question_output": "",
+  "step4_items": [],
+  "report_markdown": "",
+  "last_saved_report_path": ""
+}

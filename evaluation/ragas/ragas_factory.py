@@ -15,12 +15,14 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import sys
 import os
 
 # Add parent directory to path to import app modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
+import httpx
 from openai import AsyncOpenAI
 from openai import OpenAI
 from ragas.llms import llm_factory
@@ -36,6 +38,48 @@ from app.config import (
     JUDGE_EMBEDDING_API_KEY,
     JUDGE_EMBEDDING_BASE_URL,
 )
+
+
+class _MaxCompletionTokensTransport(httpx.AsyncBaseTransport):
+    """HTTP transport that rewrites max_tokens → max_completion_tokens.
+
+    Newer OpenAI models (o-series, gpt-5.x-mini, …) reject max_tokens with a
+    400 error and require max_completion_tokens instead. Ragas/instructor
+    always sends max_tokens internally with no override hook, so we fix it at
+    the transport layer before the request hits the wire.
+    """
+
+    def __init__(self, wrapped: httpx.AsyncBaseTransport) -> None:
+        self._wrapped = wrapped
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        if "/chat/completions" in str(request.url) and request.content:
+            try:
+                body = json.loads(request.content)
+                if "max_tokens" in body:
+                    body["max_completion_tokens"] = body.pop("max_tokens")
+                    new_content = json.dumps(body).encode()
+                    headers = dict(request.headers)
+                    headers["content-length"] = str(len(new_content))
+                    request = httpx.Request(
+                        method=request.method,
+                        url=request.url,
+                        headers=headers,
+                        content=new_content,
+                    )
+            except Exception:
+                pass
+        return await self._wrapped.handle_async_request(request)
+
+
+def _make_async_openai_client(api_key: str, base_url: str | None = None) -> AsyncOpenAI:
+    """Build an AsyncOpenAI client with max_tokens→max_completion_tokens transport."""
+    transport = _MaxCompletionTokensTransport(httpx.AsyncHTTPTransport())
+    http_client = httpx.AsyncClient(transport=transport)
+    kwargs: dict = {"api_key": api_key, "http_client": http_client}
+    if base_url:
+        kwargs["base_url"] = base_url
+    return AsyncOpenAI(**kwargs)
 
 
 # Gemini OpenAI-compatible endpoint for Ragas
@@ -125,22 +169,20 @@ def get_async_judge_llm_client() -> AsyncOpenAI:
     if provider == "openai":
         if not JUDGE_LLM_API_KEY:
             raise ValueError("OPENAI_API_KEY is required when JUDGE_PROVIDER=openai")
-        
-        kwargs: dict[str, str] = {"api_key": JUDGE_LLM_API_KEY}
-        base_url = _normalize_base_url(JUDGE_LLM_BASE_URL)
-        if base_url:
-            kwargs["base_url"] = base_url
-        
-        return AsyncOpenAI(**kwargs)
-    
+
+        # Use the patched client so max_tokens is rewritten to
+        # max_completion_tokens for newer models that require it.
+        base_url = _normalize_base_url(JUDGE_LLM_BASE_URL) or None
+        return _make_async_openai_client(api_key=JUDGE_LLM_API_KEY, base_url=base_url)
+
     if provider == "gemini":
         if not JUDGE_LLM_API_KEY:
             raise ValueError("GEMINI_API_KEY is required when JUDGE_PROVIDER=gemini")
-        
+
         # Use Gemini's OpenAI-compatible endpoint
         base_url = _normalize_base_url(JUDGE_LLM_BASE_URL) or GEMINI_OPENAI_COMPAT_BASE_URL
         return AsyncOpenAI(api_key=JUDGE_LLM_API_KEY, base_url=base_url)
-    
+
     raise ValueError(f"Unsupported JUDGE_PROVIDER: {JUDGE_PROVIDER!r}")
 
 
@@ -223,10 +265,10 @@ def _resolve_judge_embedding_model() -> str:
 
 def get_ragas_judge_llm():
     """Return a Ragas LLM instance for evaluation metrics.
-    
+
     Returns:
         Ragas LLM instance configured with the judge provider and model.
-        
+
     Example:
         >>> llm = get_ragas_judge_llm()
         >>> # Use with Ragas metrics
@@ -234,11 +276,11 @@ def get_ragas_judge_llm():
     """
     client = get_async_judge_llm_client()
     model = _resolve_judge_llm_model()
-    
-    # Ragas llm_factory expects model as first positional arg, provider as keyword
-    # All providers use OpenAI-compatible endpoints (Ollama and Gemini via compatibility layer)
-    # Set max_tokens to 4096 to avoid truncation on long faithfulness evaluations
-    return llm_factory(model, provider="openai", client=client, max_tokens=4096)
+
+    # llm_factory returns an InstructorLLM, which is required by Ragas
+    # collections metrics. The patched transport on `client` handles
+    # max_tokens → max_completion_tokens for newer OpenAI models.
+    return llm_factory(model, provider="openai", client=client)
 
 
 def get_ragas_judge_embeddings():

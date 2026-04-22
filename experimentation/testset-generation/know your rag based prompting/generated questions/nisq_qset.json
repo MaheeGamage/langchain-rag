@@ -1,0 +1,122 @@
+[
+  {
+    "inputs": {
+      "question": "What physical entities are used to create the qubits currently powering the NISQ era of quantum computing?"
+    },
+    "expectations": {
+      "expected_response": "Quantum bits, or qubits, are the fundamental information-carrying components of a quantum computer and can be physically realized through entities such as single atoms, electrons, photons, or superconducting electrical circuits."
+    },
+    "subdomain": "nisq_constraints_and_qsd_constraints",
+    "q_class": "fact_single"
+  },
+  {
+    "inputs": {
+      "question": "What are the defining qubit counts and error correction limitations of NISQ era quantum devices?"
+    },
+    "expectations": {
+      "expected_response": "The current 'NISQ' era of quantum computing is defined by Noisy Intermediate-Scale Quantum devices that possess between 50 and a few hundred qubits but lack the protection of quantum error correction."
+    },
+    "subdomain": "nisq_constraints_and_qsd_constraints",
+    "q_class": "fact_single"
+  },
+  {
+    "inputs": {
+      "question": "How does the transitional NISQ era's goal of solving classically intractable problems apply to finding prime factors of large composite integers?"
+    },
+    "expectations": {
+      "expected_response": "Quantum computers are expected to solve certain classically intractable problems, such as finding the prime factors of large composite integers, more efficiently than any known classical algorithm."
+    },
+    "subdomain": "nisq_constraints_and_qsd_constraints",
+    "q_class": "fact_single"
+  },
+  {
+    "inputs": {
+      "question": "How do NISQ era quantum computers manage the conflict between qubit isolation and information processing?"
+    },
+    "expectations": {
+      "expected_response": "A significant practical challenge in quantum computing is the requirement to keep qubits nearly perfectly isolated from the outside world to prevent uncontrollable disturbances while still allowing them to interact for information processing."
+    },
+    "subdomain": "nisq_constraints_and_qsd_constraints",
+    "q_class": "fact_single"
+  },
+  {
+    "inputs": {
+      "question": "How does the NISQ era transition affect the efficiency of solving NP-hard combinatorial problems like the traveling salesman task on quantum hardware?"
+    },
+    "expectations": {
+      "expected_response": "Quantum computers are not expected to efficiently solve all difficult problems, as hard combinatorial search tasks like the traveling salesman problem are likely to remain quantumly hard despite the potential for modest speedups."
+    },
+    "subdomain": "nisq_constraints_and_qsd_constraints",
+    "q_class": "fact_single"
+  },
+  {
+    "inputs": {
+      "question": "What are the physical components and error correction status of devices in the NISQ era of quantum computing?"
+    },
+    "expectations": {
+      "expected_response": "During the current transitional 'NISQ' era, quantum computing devices are constructed using up to a few hundred physical entities, such as single atoms or superconducting circuits, but currently operate without the vital protection of quantum error correction."
+    },
+    "subdomain": "nisq_constraints_and_qsd_constraints",
+    "q_class": "summary"
+  },
+  {
+    "inputs": {
+      "question": "Why do qubits present a significant engineering hurdle during the current NISQ era of quantum computing?"
+    },
+    "expectations": {
+      "expected_response": "The fundamental information-carrying components of a quantum computer, known as qubits, pose a major practical challenge because they must be kept nearly perfectly isolated from external disturbances while simultaneously interacting to process information."
+    },
+    "subdomain": "nisq_constraints_and_qsd_constraints",
+    "q_class": "summary"
+  },
+  {
+    "inputs": {
+      "question": "Given the current NISQ era's limitations, what are the specific classically intractable problems that quantum computers are unlikely to efficiently resolve?"
+    },
+    "expectations": {
+      "expected_response": "Although holding the immense potential to efficiently tackle classically intractable problems like prime factorization, quantum computers are not a universal tool and are unlikely to efficiently resolve hard combinatorial search tasks such as the traveling salesman problem."
+    },
+    "subdomain": "nisq_constraints_and_qsd_constraints",
+    "q_class": "summary"
+  },
+  {
+    "inputs": {
+      "question": "Why does environmental noise prevent quantum error correction in the current NISQ era?"
+    },
+    "expectations": {
+      "expected_response": "The lack of quantum error correction that characterizes the current NISQ era is a direct consequence of the physical difficulty in isolating delicate components, such as single atoms or photons, from uncontrollable environmental noise."
+    },
+    "subdomain": "nisq_constraints_and_qsd_constraints",
+    "q_class": "reasoning"
+  },
+  {
+    "inputs": {
+      "question": "What are the limitations of quantum computers in the NISQ era regarding universal problem-solving and prime factorization?"
+    },
+    "expectations": {
+      "expected_response": "Despite their immense potential for specific applications like prime factorization, quantum computers represent a specialized computational advancement rather than a universal tool capable of efficiently solving all mathematically intractable challenges."
+    },
+    "subdomain": "nisq_constraints_and_qsd_constraints",
+    "q_class": "reasoning"
+  },
+  {
+    "inputs": {
+      "question": "What engineering breakthroughs are required to advance quantum computing beyond the NISQ era?"
+    },
+    "expectations": {
+      "expected_response": "Advancing beyond the current transitional phase of intermediate-scale devices will necessitate engineering breakthroughs that successfully balance the contradictory requirements of perfectly shielding physical qubits from external disturbances while still allowing them to interact for information processing."
+    },
+    "subdomain": "nisq_constraints_and_qsd_constraints",
+    "q_class": "reasoning"
+  },
+  {
+    "inputs": {
+      "question": "Not provided"
+    },
+    "expectations": {
+      "expected_response": "The current \"NISQ\" era of quantum computing is defined by Noisy Intermediate-Scale Quantum devices that possess between 50 and a few hundred qubits but lack the protection of quantum error correction."
+    },
+    "subdomain": "nisq_constraints_and_qsd_constraints",
+    "q_class": "fact_single"
+  }
+]
