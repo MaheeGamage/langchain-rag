@@ -31,6 +31,7 @@ from app.config import (
     JUDGE_PROVIDER,
     JUDGE_EMBEDDING_PROVIDER,
     RAG_GRAPH_IMPLEMENTATION,
+    RETRIEVER_PROFILE_OVERRIDE,
 )
 from evaluation.ragas.ragas_factory import (
     get_ragas_judge_llm,
@@ -54,7 +55,7 @@ EVAL_DATASET_PATH = (
     else os.path.abspath(os.path.join(_EVAL_ROOT, EVAL_DATASET_PATH))
 )
 
-MAX_Q_RAW = None
+MAX_Q_RAW = 1
 Q_INDICES_RAW = None  # e.g. "0,3,7"
 FILTER_SUBDOMAIN = None  # "qprov_provenance_taxonomy"
 FILTER_Q_CLASS = None
@@ -66,12 +67,12 @@ FILTER_Q_CLASS = None
 USE_PRECOMPUTED_ANSWERS = False
 
 ENABLED_RAGAS_METRICS = [
-    "faithfulness",
-    "context_precision",
-    "context_recall",
-    "answer_relevance",
-    "factual_correctness",
-    "factual_correctness_recall",
+    # "faithfulness",
+    # "context_precision",
+    # "context_recall",
+    # "answer_relevance",
+    # "factual_correctness",
+    # "factual_correctness_recall",
 ]
 
 
@@ -203,6 +204,8 @@ print(f"Using {producer_llm_provider} LLM: {producer_llm_model}")
 print(f"Using {producer_embed_provider} embeddings: {producer_embed_model}")
 print(f"Using {JUDGE_PROVIDER} judge LLM for evaluation")
 print(f"Using {JUDGE_EMBEDDING_PROVIDER} judge embeddings for evaluation")
+if RETRIEVER_PROFILE_OVERRIDE:
+    print(f"Retriever profile override: {RETRIEVER_PROFILE_OVERRIDE}")
 print(f"Loaded {len(eval_dataset)} evaluation questions")
 if FILTER_SUBDOMAIN:
     print(f"  Filter: subdomain={FILTER_SUBDOMAIN}")
@@ -516,6 +519,7 @@ params = {
     "ragas_metrics": ",".join(enabled_metric_names),
     "langchain_graph_type": producer_graph_type,
     "use_precomputed_answers": USE_PRECOMPUTED_ANSWERS,
+    "retriever_profile_override": RETRIEVER_PROFILE_OVERRIDE,
 }
 # Surface any extra keys from the dataset config (e.g. retrieval_profile,
 # generated_at) so they show up in the MLflow run alongside the core ones.

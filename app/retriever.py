@@ -253,6 +253,7 @@ PROFILES: dict[str, "HybridConfig"] = {
         bm25=BM25Config(k=4, preprocess_func=api_aware_tokenize),
         semantic_weight=0.5,
         bm25_weight=0.5,
+        final_k=6,
     ),
     "acronym": HybridConfig(
         semantic=SemanticConfig(k=6, score_threshold=None),
@@ -283,6 +284,7 @@ PROFILES: dict[str, "HybridConfig"] = {
         bm25=BM25Config(k=0),
         semantic_weight=1.0,
         bm25_weight=0.0,
+        final_k=6,
     ),
 }
 

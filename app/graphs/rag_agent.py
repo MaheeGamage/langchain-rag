@@ -7,7 +7,7 @@ from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, ToolMessage
 from langchain_core.tools import tool
 
-from app.config import LLM_MODEL, LLM_PROVIDER
+from app.config import LLM_MODEL, LLM_PROVIDER, RETRIEVER_PROFILE_OVERRIDE
 from app.factory import get_chat_llm
 from app.graphs.common import (
     chunk_text_for_streaming,
@@ -58,12 +58,14 @@ def retrieve_context(
             - "reranked":   k=10 each then cross-encoder rerank to top 4;
                             higher latency, best precision on hard queries.
     """
+    effective_profile = RETRIEVER_PROFILE_OVERRIDE or profile
     t = time.perf_counter()
-    retriever = get_profile_retriever(profile)
+    print("RETRIEVER_PROFILE", RETRIEVER_PROFILE_OVERRIDE, profile)
+    retriever = get_profile_retriever(effective_profile)
     docs = invoke_retriever_with_retry(retriever, query, log)
     log.info(
         "rag_agent retrieve[%s]: %d chunks in %.2fs",
-        profile, len(docs), time.perf_counter() - t,
+        effective_profile, len(docs), time.perf_counter() - t,
     )
 
     serialised = "\n\n".join(

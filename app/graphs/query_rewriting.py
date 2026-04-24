@@ -10,7 +10,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langgraph.graph import END, StateGraph
 from mlflow.entities import SpanType
 
-from app.config import HELPER_LLM_MODEL, HELPER_LLM_PROVIDER, LLM_MODEL, LLM_PROVIDER
+from app.config import HELPER_LLM_MODEL, HELPER_LLM_PROVIDER, LLM_MODEL, LLM_PROVIDER, RETRIEVER_PROFILE_OVERRIDE
 from app.factory import get_helper_llm, get_llm
 from app.graphs.common import (
     build_messages,
@@ -74,6 +74,10 @@ def _parse_rewrite(raw: str, fallback_query: str) -> tuple[str, str]:
     if profile not in PROFILE_NAMES:
         log.warning("Helper LLM picked unknown profile %r; using 'default'", profile)
         profile = "default"
+
+    if RETRIEVER_PROFILE_OVERRIDE:
+        log.info("Retriever profile overridden: %s -> %s", profile, RETRIEVER_PROFILE_OVERRIDE)
+        profile = RETRIEVER_PROFILE_OVERRIDE
 
     return query, profile
 
@@ -165,7 +169,9 @@ def stream_answer(
     rewrite_result = rewrite_query(state, run_config=_invoke_cfg)
     state.update(rewrite_result)
 
-    if not profile_selection:
+    if RETRIEVER_PROFILE_OVERRIDE:
+        state["retrieval_profile"] = RETRIEVER_PROFILE_OVERRIDE
+    elif not profile_selection:
         state["retrieval_profile"] = "default"
 
     retrieval_result = retrieve(state)

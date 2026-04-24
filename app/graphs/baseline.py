@@ -9,7 +9,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langgraph.graph import END, StateGraph
 from mlflow.entities import SpanType
 
-from app.config import LLM_MODEL, LLM_PROVIDER
+from app.config import LLM_MODEL, LLM_PROVIDER, RETRIEVER_PROFILE_OVERRIDE
 from app.factory import get_llm
 from app.graphs.common import (
     build_messages,
@@ -30,8 +30,11 @@ log = logging.getLogger(__name__)
 #     semantic_weight=0.5,
 #     bm25_weight=0.5,
 # ))
-retriever = get_profile_retriever("semantic")
+_baseline_profile = RETRIEVER_PROFILE_OVERRIDE or "semantic"
+retriever = get_profile_retriever(_baseline_profile)
 log.info("Using %s LLM: %s", LLM_PROVIDER, LLM_MODEL)
+if RETRIEVER_PROFILE_OVERRIDE:
+    log.info("Retriever profile overridden: %s", _baseline_profile)
 llm = get_llm() | StrOutputParser()
 
 
