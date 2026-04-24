@@ -96,7 +96,9 @@ def stream_answer(
         llm_model=LLM_MODEL,
     )
 
-    answer = get_llm().invoke(prompt_messages)
+    _cbs = (config or {}).get("callbacks", [])
+    _invoke_cfg = {"callbacks": _cbs} if _cbs else {}
+    answer = get_llm().invoke(prompt_messages, config=_invoke_cfg)
     chunks = chunk_text_for_streaming(answer if isinstance(answer, str) else answer.content)
 
     def _token_iterator() -> Iterator[str]:

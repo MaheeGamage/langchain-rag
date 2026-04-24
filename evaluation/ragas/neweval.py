@@ -6,6 +6,7 @@ import asyncio
 import json
 import mlflow
 import pandas as pd
+import tiktoken
 from ragas import EvaluationDataset, SingleTurnSample
 from ragas.metrics.collections import (
     Faithfulness,
@@ -20,6 +21,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from app.graph import graph, _stream_answer
+from app.graphs.token_counter import TokenCountCallback
 from app.config import (
     JUDGE_LLM_MODEL,
     LLM_MODEL,
@@ -42,8 +44,8 @@ from evaluation.ragas.ragas_factory import (
 # Examples:
 #   EVAL_DATASET_PATH = "/home/mahee/.../questions-with-response/exp_qsd-xxx.json"
 #   EVAL_DATASET_PATH = "question-sets/qset-v3.json"
-# EVAL_DATASET_PATH = "/home/mahee/Work/Thesis/Repos/langchain-rag/evaluation/ragas/neweval.py"
-EVAL_DATASET_PATH = "/home/mahee/Work/Thesis/Repos/langchain-rag/evaluation/question-sets/questions-with-response/exp_qsd-53fdfeda71b644028d483906ed9cb406.json"
+EVAL_DATASET_PATH = "/home/mahee/Work/Thesis/Repos/langchain-rag/evaluation/question-sets/qset-v3.json"
+# EVAL_DATASET_PATH = "/home/mahee/Work/Thesis/Repos/langchain-rag/evaluation/question-sets/questions-with-response/exp_qsd-53fdfeda71b644028d483906ed9cb406.json"
 
 _EVAL_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 EVAL_DATASET_PATH = (
@@ -61,7 +63,7 @@ FILTER_Q_CLASS = None
 # and `precomputed.retrieved_contexts` from the eval dataset JSON instead.
 # Items missing either field are kept in results with an error recorded in
 # `metric_errors` for every enabled metric, and no metrics are computed.
-USE_PRECOMPUTED_ANSWERS = True
+USE_PRECOMPUTED_ANSWERS = False
 
 ENABLED_RAGAS_METRICS = [
     "faithfulness",
@@ -135,9 +137,17 @@ def load_eval_dataset() -> tuple[list[dict[str, str]], dict]:
     return normalized, dataset_config
 
 
+_tokenizer = tiktoken.get_encoding("cl100k_base")
+
+
+def _count_tokens(text: str) -> int:
+    return len(_tokenizer.encode(text)) if text else 0
+
+
 def run_rag(question: str) -> dict:
     """Run the RAG pipeline using the actual graph from app/graph.py"""
-    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+    token_cb = TokenCountCallback()
+    config = {"configurable": {"thread_id": str(uuid.uuid4())}, "callbacks": [token_cb]}
 
     # Use _stream_answer so retrieved docs are extracted correctly for every
     # graph implementation. For rag_agent the documents live in ToolMessage
@@ -157,6 +167,9 @@ def run_rag(question: str) -> dict:
     return {
         "response": answer,
         "retrieved_contexts": retrieved_contexts,
+        "llm_calls": token_cb.llm_calls,
+        "llm_input_tokens": token_cb.input_tokens,
+        "llm_output_tokens": token_cb.output_tokens,
     }
 
 
@@ -226,6 +239,9 @@ for item in eval_dataset:
 
     load_error = None
     rag_runtime_s = None
+    llm_calls = None
+    llm_input_tokens = None
+    llm_output_tokens = None
     if USE_PRECOMPUTED_ANSWERS:
         response = item.get("precomputed_response")
         retrieved_contexts = item.get("precomputed_retrieved_contexts")
@@ -249,10 +265,14 @@ for item in eval_dataset:
         rag_runtime_s = time.perf_counter() - rag_start
         response = result["response"]
         retrieved_contexts = result["retrieved_contexts"]
+        llm_calls = result["llm_calls"]
+        llm_input_tokens = result["llm_input_tokens"]
+        llm_output_tokens = result["llm_output_tokens"]
         print(f"  Q: {question}")
         print(f"  A: {response}")
         print(
-            f"  Retrieved {len(retrieved_contexts)} contexts in {rag_runtime_s:.2f}s\n"
+            f"  Retrieved {len(retrieved_contexts)} contexts in {rag_runtime_s:.2f}s"
+            f" | LLM calls={llm_calls} in={llm_input_tokens} out={llm_output_tokens} tokens\n"
         )
 
     sample_records.append(
@@ -267,6 +287,9 @@ for item in eval_dataset:
             "question_class": question_class,
             "load_error": load_error,
             "rag_runtime_s": rag_runtime_s,
+            "llm_calls": llm_calls,
+            "llm_input_tokens": llm_input_tokens,
+            "llm_output_tokens": llm_output_tokens,
         }
     )
 rag_phase_runtime_s = time.perf_counter() - rag_phase_start
@@ -381,17 +404,30 @@ async def evaluate_samples():
                 f"... -> {', '.join(failed_metrics)}"
             )
 
+        contexts = sample.retrieved_contexts or []
+        context_tokens = sum(_count_tokens(c) for c in contexts)
+        response_tokens = _count_tokens(sample.response or "")
+        question_tokens = _count_tokens(sample.user_input or "")
+
         results.append(
             {
                 "user_input": sample.user_input,
                 "response": sample.response,
                 "reference": sample.reference,
-                "retrieved_contexts": sample.retrieved_contexts or [],
-                "retrieved_context": "\n\n---\n\n".join(
-                    sample.retrieved_contexts or []
-                ),
+                "retrieved_contexts": contexts,
+                "retrieved_context": "\n\n---\n\n".join(contexts),
                 "subdomain": record["subdomain"],
                 "question_class": record["question_class"],
+                # Observable effort metrics (always available, including precomputed mode)
+                "num_retrieved_contexts": len(contexts),
+                "context_tokens": context_tokens,
+                "response_tokens": response_tokens,
+                "question_tokens": question_tokens,
+                "input_tokens_approx": question_tokens + context_tokens,
+                # Actual API token counts (live RAG mode only; None when precomputed)
+                "llm_calls": record.get("llm_calls"),
+                "llm_input_tokens": record.get("llm_input_tokens"),
+                "llm_output_tokens": record.get("llm_output_tokens"),
                 **metric_scores,
                 "metric_errors": {
                     k: v for k, v in metric_errors.items() if v is not None
@@ -412,6 +448,9 @@ score_cols = enabled_metric_names
 for col in score_cols:
     score_df[col] = pd.to_numeric(score_df[col], errors="coerce")
 
+effort_cols = ["num_retrieved_contexts", "context_tokens", "response_tokens", "input_tokens_approx"]
+live_effort_cols = ["llm_calls", "llm_input_tokens", "llm_output_tokens"]
+
 print("\n=== Per-sample Scores ===")
 display_cols = ["user_input", "subdomain", "question_class"] + score_cols
 print(score_df[display_cols].to_string(index=False))
@@ -424,6 +463,21 @@ for k, v in mean_scores.items():
     else:
         print(f"  {k}: {v:.4f}")
 
+print("\n=== LLM Effort (tiktoken, all modes) ===")
+for col in effort_cols:
+    if col in score_df.columns:
+        total = score_df[col].sum()
+        mean = score_df[col].mean()
+        print(f"  {col}: total={int(total)}  mean={mean:.1f}")
+
+if not USE_PRECOMPUTED_ANSWERS:
+    print("\n=== LLM Effort (API token counts, live mode) ===")
+    for col in live_effort_cols:
+        if col in score_df.columns and score_df[col].notna().any():
+            total = score_df[col].sum()
+            mean = score_df[col].mean()
+            print(f"  {col}: total={int(total)}  mean={mean:.1f}")
+
 print("\n=== Runtime ===")
 print(f"  RAG phase:        {rag_phase_runtime_s:.2f}s")
 print(f"  Evaluation phase: {eval_phase_runtime_s:.2f}s")
@@ -435,6 +489,19 @@ for metric_name, metric_value in mean_scores.items():
     mlflow.log_metric(metric_name, metric_value)
 mlflow.log_metric("rag_phase_runtime_s", rag_phase_runtime_s)
 mlflow.log_metric("eval_phase_runtime_s", eval_phase_runtime_s)
+
+# LLM effort — tiktoken-based (always present)
+for col in effort_cols:
+    if col in score_df.columns:
+        mlflow.log_metric(f"mean_{col}", score_df[col].mean())
+        mlflow.log_metric(f"total_{col}", int(score_df[col].sum()))
+
+# LLM effort — real API token counts (live mode only)
+if not USE_PRECOMPUTED_ANSWERS:
+    for col in live_effort_cols:
+        if col in score_df.columns and score_df[col].notna().any():
+            mlflow.log_metric(f"total_{col}", int(score_df[col].sum()))
+            mlflow.log_metric(f"mean_{col}", score_df[col].mean())
 mlflow.log_table(data=score_df, artifact_file="ragas_scores.json")
 params = {
     "llm_provider": producer_llm_provider,

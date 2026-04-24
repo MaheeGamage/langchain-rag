@@ -78,10 +78,11 @@ def _parse_rewrite(raw: str, fallback_query: str) -> tuple[str, str]:
     return query, profile
 
 
-def rewrite_query(state: QueryRewritingState):
+def rewrite_query(state: QueryRewritingState, run_config: dict | None = None):
     question = latest_user_query(state["messages"])
     t = time.perf_counter()
-    raw = helper_llm.invoke(REWRITE_PROMPT.substitute(question=question))
+    invoke_kwargs = {"config": run_config} if run_config else {}
+    raw = helper_llm.invoke(REWRITE_PROMPT.substitute(question=question), **invoke_kwargs)
     query, profile = _parse_rewrite(raw, fallback_query=question)
     log.info(
         "Rewrote in %.2fs: %r -> query=%r profile=%s",
@@ -158,7 +159,10 @@ def stream_answer(
         "retrieved": [],
     }
 
-    rewrite_result = rewrite_query(state)
+    _cbs = (config or {}).get("callbacks", [])
+    _invoke_cfg = {"callbacks": _cbs} if _cbs else None
+
+    rewrite_result = rewrite_query(state, run_config=_invoke_cfg)
     state.update(rewrite_result)
 
     if not profile_selection:
@@ -174,7 +178,7 @@ def stream_answer(
         llm_model=LLM_MODEL,
     )
 
-    answer = invoke_llm_with_retry(get_llm(), prompt_messages, log)
+    answer = invoke_llm_with_retry(get_llm(), prompt_messages, log, run_config=_invoke_cfg)
     chunks = chunk_text_for_streaming(answer if isinstance(answer, str) else answer.content)
 
     def _token_iterator() -> Iterator[str]:
