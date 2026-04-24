@@ -20,6 +20,12 @@ A retrieval-augmented generation (RAG) system using LangChain, ChromaDB, and Oll
    ollama pull tinyllama            # LLM
    ```
 
+4. **(If exporting notebooks to PDF) install system tools once on your machine:**
+   ```bash
+   sudo apt-get update && sudo apt-get install -y texlive-xetex pandoc
+   ```
+   `nbconvert` and `jupyter` are installed through this project's Poetry environment, but PDF export also requires system binaries (`xelatex` + `pandoc`).
+
 ## Usage
 
 ### ChromaDB Connection
