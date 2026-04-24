@@ -1,12 +1,19 @@
 import os
 import sys
+import time
 import uuid
 import asyncio
 import json
 import mlflow
 import pandas as pd
 from ragas import EvaluationDataset, SingleTurnSample
-from ragas.metrics.collections import Faithfulness, ContextPrecision, ContextRecall, AnswerRelevancy, FactualCorrectness
+from ragas.metrics.collections import (
+    Faithfulness,
+    ContextPrecision,
+    ContextRecall,
+    AnswerRelevancy,
+    FactualCorrectness,
+)
 from langchain_core.messages import AIMessage, HumanMessage
 
 # Add parent directory to path to import app modules
@@ -14,45 +21,85 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 
 from app.graph import graph, _stream_answer
 from app.config import (
-    JUDGE_LLM_MODEL, LLM_MODEL, LLM_PROVIDER, 
-    EMBEDDING_MODEL, EMBEDDING_PROVIDER,
-    JUDGE_PROVIDER, JUDGE_EMBEDDING_PROVIDER, RAG_GRAPH_IMPLEMENTATION,
+    JUDGE_LLM_MODEL,
+    LLM_MODEL,
+    LLM_PROVIDER,
+    EMBEDDING_MODEL,
+    EMBEDDING_PROVIDER,
+    JUDGE_PROVIDER,
+    JUDGE_EMBEDDING_PROVIDER,
+    RAG_GRAPH_IMPLEMENTATION,
 )
-from evaluation.ragas.ragas_factory import get_ragas_judge_llm, get_ragas_judge_embeddings
-
-
-EVAL_DATASET_PATH = os.path.abspath(
-    # os.path.join(os.path.dirname(__file__), "..", "mlflow", "eval_dataset.json")
-    # os.path.join(os.path.dirname(__file__), "..", "eval_dataset.json")
-    # os.path.join(os.path.dirname(__file__), "..", "question-sets", "test3.json")
-    os.path.join(os.path.dirname(__file__), "..", "question-sets", "exp", "test5.json")
+from evaluation.ragas.ragas_factory import (
+    get_ragas_judge_llm,
+    get_ragas_judge_embeddings,
 )
 
-MAX_Q_RAW = 1
-Q_INDICES_RAW = None       # e.g. "0,3,7"
-FILTER_SUBDOMAIN = "qprov_provenance_taxonomy" #os.environ.get("FILTER_SUBDOMAIN")
+
+# Path to the eval dataset JSON. Accepts either:
+#   * an absolute path (just paste it in), or
+#   * a path relative to the `evaluation/` directory (e.g. "question-sets/qset-v3.json").
+# Examples:
+#   EVAL_DATASET_PATH = "/home/mahee/.../questions-with-response/exp_qsd-xxx.json"
+#   EVAL_DATASET_PATH = "question-sets/qset-v3.json"
+# EVAL_DATASET_PATH = "/home/mahee/Work/Thesis/Repos/langchain-rag/evaluation/ragas/neweval.py"
+EVAL_DATASET_PATH = "/home/mahee/Work/Thesis/Repos/langchain-rag/evaluation/question-sets/questions-with-response/exp_qsd-53fdfeda71b644028d483906ed9cb406.json"
+
+_EVAL_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+EVAL_DATASET_PATH = (
+    EVAL_DATASET_PATH
+    if os.path.isabs(EVAL_DATASET_PATH)
+    else os.path.abspath(os.path.join(_EVAL_ROOT, EVAL_DATASET_PATH))
+)
+
+MAX_Q_RAW = None
+Q_INDICES_RAW = None  # e.g. "0,3,7"
+FILTER_SUBDOMAIN = None  # "qprov_provenance_taxonomy"
 FILTER_Q_CLASS = None
 
+# When True, skip running the RAG pipeline and read `precomputed.response`
+# and `precomputed.retrieved_contexts` from the eval dataset JSON instead.
+# Items missing either field are kept in results with an error recorded in
+# `metric_errors` for every enabled metric, and no metrics are computed.
+USE_PRECOMPUTED_ANSWERS = True
+
 ENABLED_RAGAS_METRICS = [
-    # "faithfulness",
-    # "context_precision",
+    "faithfulness",
+    "context_precision",
     "context_recall",
-    # "answer_relevance",
-    # "factual_correctness",
-    "factual_correctness_recall"
+    "answer_relevance",
+    "factual_correctness",
+    "factual_correctness_recall",
 ]
 
 
-def load_eval_dataset() -> list[dict[str, str]]:
-    """Load eval dataset and normalize to {'user_input', 'reference'} shape."""
+def load_eval_dataset() -> tuple[list[dict[str, str]], dict]:
+    """Load eval dataset and normalize to {'user_input', 'reference'} shape.
+
+    Accepts two top-level shapes:
+      1. A flat list of question items (legacy).
+      2. An object {"config": {...}, "questions": [...]} — the `config` block
+         captures the RAG settings used to generate any precomputed answers
+         (llm_model, embedding_model, graph, etc.) so that re-evaluating a
+         precomputed dataset logs the correct producer info to MLflow.
+    Returns (normalized_items, dataset_config).
+    """
     max_q = int(MAX_Q_RAW) if MAX_Q_RAW else None
     q_indices = (
         [int(i.strip()) for i in Q_INDICES_RAW.split(",") if i.strip()]
-        if Q_INDICES_RAW else None
+        if Q_INDICES_RAW
+        else None
     )
 
     with open(EVAL_DATASET_PATH, "r", encoding="utf-8") as f:
-        raw_items = json.load(f)
+        raw = json.load(f)
+
+    if isinstance(raw, dict):
+        dataset_config = raw.get("config") or {}
+        raw_items = raw.get("questions") or []
+    else:
+        dataset_config = {}
+        raw_items = raw
 
     normalized = []
     for item in raw_items:
@@ -60,14 +107,21 @@ def load_eval_dataset() -> list[dict[str, str]]:
         reference = item.get("expectations", {}).get("expected_response")
         subdomain = item.get("subdomain")
         question_class = item.get("q_class")
+        precomputed = item.get("precomputed") or {}
 
         if question and reference:
-            normalized.append({
-                "user_input": question,
-                "reference": reference,
-                "subdomain": subdomain,
-                "question_class": question_class,
-            })
+            normalized.append(
+                {
+                    "user_input": question,
+                    "reference": reference,
+                    "subdomain": subdomain,
+                    "question_class": question_class,
+                    "precomputed_response": precomputed.get("response"),
+                    "precomputed_retrieved_contexts": precomputed.get(
+                        "retrieved_contexts"
+                    ),
+                }
+            )
 
     if FILTER_SUBDOMAIN:
         normalized = [q for q in normalized if q["subdomain"] == FILTER_SUBDOMAIN]
@@ -78,7 +132,8 @@ def load_eval_dataset() -> list[dict[str, str]]:
     elif max_q is not None:
         normalized = normalized[:max_q]
 
-    return normalized
+    return normalized, dataset_config
+
 
 def run_rag(question: str) -> dict:
     """Run the RAG pipeline using the actual graph from app/graph.py"""
@@ -96,9 +151,7 @@ def run_rag(question: str) -> dict:
     answer = "".join(token_iter)
 
     retrieved_contexts = [
-        entry.content
-        for entry in retrieved
-        if getattr(entry, "content", None)
+        entry.content for entry in retrieved if getattr(entry, "content", None)
     ]
 
     return {
@@ -106,11 +159,35 @@ def run_rag(question: str) -> dict:
         "retrieved_contexts": retrieved_contexts,
     }
 
-# Define evaluation dataset with questions and reference answers
-eval_dataset = load_eval_dataset()
 
-print(f"Using {LLM_PROVIDER} LLM: {LLM_MODEL}")
-print(f"Using {EMBEDDING_PROVIDER} embeddings: {EMBEDDING_MODEL}")
+total_start = time.perf_counter()
+
+# Start the MLflow run up-front so its built-in start/end timestamps (shown as
+# "Duration" in the experiment run list) cover the full script execution —
+# dataset load, RAG, and RAGAS evaluation — not just the final logging step.
+mlflow.start_run()
+
+# Define evaluation dataset with questions and reference answers
+eval_dataset, dataset_config = load_eval_dataset()
+
+
+# Resolve producer-side settings: in precomputed mode prefer values embedded
+# in the dataset (they describe the pipeline that generated the answers); in
+# live-RAG mode use the currently loaded app.config.
+def _resolve(key: str, live_value):
+    if USE_PRECOMPUTED_ANSWERS and dataset_config.get(key) is not None:
+        return dataset_config.get(key)
+    return live_value
+
+
+producer_llm_provider = _resolve("llm_provider", LLM_PROVIDER)
+producer_llm_model = _resolve("llm_model", LLM_MODEL)
+producer_embed_provider = _resolve("embedding_provider", EMBEDDING_PROVIDER)
+producer_embed_model = _resolve("embedding_model", EMBEDDING_MODEL)
+producer_graph_type = _resolve("langchain_graph_type", RAG_GRAPH_IMPLEMENTATION)
+
+print(f"Using {producer_llm_provider} LLM: {producer_llm_model}")
+print(f"Using {producer_embed_provider} embeddings: {producer_embed_model}")
 print(f"Using {JUDGE_PROVIDER} judge LLM for evaluation")
 print(f"Using {JUDGE_EMBEDDING_PROVIDER} judge embeddings for evaluation")
 print(f"Loaded {len(eval_dataset)} evaluation questions")
@@ -123,35 +200,80 @@ if Q_INDICES_RAW:
 elif MAX_Q_RAW:
     print(f"  Filter: MAX_Q={MAX_Q_RAW}")
 else:
-    print("  Tip: filter with MAX_Q=N, Q_INDICES=0,3,7, FILTER_SUBDOMAIN=x, FILTER_Q_CLASS=x")
-print("\nRunning RAG on evaluation questions...")
+    print(
+        "  Tip: filter with MAX_Q=N, Q_INDICES=0,3,7, FILTER_SUBDOMAIN=x, FILTER_Q_CLASS=x"
+    )
+if USE_PRECOMPUTED_ANSWERS:
+    print("\nUsing precomputed answers from dataset (skipping RAG)...")
+    if dataset_config:
+        print(f"  Dataset config: {dataset_config}")
+    else:
+        print(
+            "  [warn] Dataset has no top-level `config` block — producer "
+            "settings will fall back to the currently loaded app.config."
+        )
+else:
+    print("\nRunning RAG on evaluation questions...")
 
 # Build samples by running RAG for each question
 sample_records = []
+rag_phase_start = time.perf_counter()
 for item in eval_dataset:
     question = item["user_input"]
     reference = item["reference"]
     subdomain = item["subdomain"]
     question_class = item["question_class"]
 
-    result = run_rag(question)
-    
-    print(f"  Q: {question}")
-    print(f"  A: {result['response']}")
-    print(f"  Retrieved {len(result['retrieved_contexts'])} contexts\n")
-    
-    sample_records.append({
-        "sample": SingleTurnSample(
-            user_input=question,
-            response=result["response"],
-            retrieved_contexts=result["retrieved_contexts"],
-            reference=reference,
-        ),
-        "subdomain": subdomain,
-        "question_class": question_class,
-    })
+    load_error = None
+    rag_runtime_s = None
+    if USE_PRECOMPUTED_ANSWERS:
+        response = item.get("precomputed_response")
+        retrieved_contexts = item.get("precomputed_retrieved_contexts")
+        missing = []
+        if not response:
+            missing.append("precomputed.response")
+        if retrieved_contexts is None:
+            missing.append("precomputed.retrieved_contexts")
+        if missing:
+            load_error = "Missing required field(s): " + ", ".join(missing)
+            print(f"  [skip] Q: {question[:80]} -> {load_error}")
+            response = response or ""
+            retrieved_contexts = retrieved_contexts or []
+        else:
+            print(f"  Q: {question}")
+            print(f"  A: {response}")
+            print(f"  Retrieved {len(retrieved_contexts)} contexts (precomputed)\n")
+    else:
+        rag_start = time.perf_counter()
+        result = run_rag(question)
+        rag_runtime_s = time.perf_counter() - rag_start
+        response = result["response"]
+        retrieved_contexts = result["retrieved_contexts"]
+        print(f"  Q: {question}")
+        print(f"  A: {response}")
+        print(
+            f"  Retrieved {len(retrieved_contexts)} contexts in {rag_runtime_s:.2f}s\n"
+        )
 
-ragas_dataset = EvaluationDataset(samples=[record["sample"] for record in sample_records])
+    sample_records.append(
+        {
+            "sample": SingleTurnSample(
+                user_input=question,
+                response=response,
+                retrieved_contexts=retrieved_contexts,
+                reference=reference,
+            ),
+            "subdomain": subdomain,
+            "question_class": question_class,
+            "load_error": load_error,
+            "rag_runtime_s": rag_runtime_s,
+        }
+    )
+rag_phase_runtime_s = time.perf_counter() - rag_phase_start
+
+ragas_dataset = EvaluationDataset(
+    samples=[record["sample"] for record in sample_records]
+)
 
 # Setup LLM and embeddings for Ragas metrics using configured judge providers
 llm = get_ragas_judge_llm()
@@ -210,11 +332,14 @@ if unknown_metrics:
     )
 
 if not enabled_metric_names:
-    print("[info] No metrics enabled. Skipping RAGAS scoring and logging only per-sample outputs.")
+    print(
+        "[info] No metrics enabled. Skipping RAGAS scoring and logging only per-sample outputs."
+    )
 else:
     print("Enabled metrics: " + ", ".join(enabled_metric_names))
 
 print("Running RAGAS evaluation...")
+
 
 # Evaluate each sample using the collections API
 async def evaluate_samples():
@@ -228,16 +353,26 @@ async def evaluate_samples():
     results = []
     for record in sample_records:
         sample = record["sample"]
+        load_error = record.get("load_error")
         # Score each metric independently so one failure does not abort evaluation.
-        metric_scores = {}
+        metric_scores = {name: None for name in enabled_metric_names}
         metric_errors = {}
-        for metric_name in enabled_metric_names:
-            score_value, score_error = await safe_ascore(
-                metric_name,
-                metric_scorers[metric_name](sample),
-            )
-            metric_scores[metric_name] = score_value
-            metric_errors[metric_name] = score_error
+
+        eval_runtime_s = None
+        if load_error:
+            # Skip all scoring for samples missing required precomputed data.
+            for metric_name in enabled_metric_names:
+                metric_errors[metric_name] = load_error
+        else:
+            eval_start = time.perf_counter()
+            for metric_name in enabled_metric_names:
+                score_value, score_error = await safe_ascore(
+                    metric_name,
+                    metric_scorers[metric_name](sample),
+                )
+                metric_scores[metric_name] = score_value
+                metric_errors[metric_name] = score_error
+            eval_runtime_s = time.perf_counter() - eval_start
 
         failed_metrics = [name for name, err in metric_errors.items() if err]
         if failed_metrics:
@@ -245,25 +380,33 @@ async def evaluate_samples():
                 f"[warn] Metric failures for question: {sample.user_input[:80]}"
                 f"... -> {', '.join(failed_metrics)}"
             )
-        
-        results.append({
-            "user_input": sample.user_input,
-            "response": sample.response,
-            "reference": sample.reference,
-            "retrieved_contexts": sample.retrieved_contexts or [],
-            "retrieved_context": "\n\n---\n\n".join(sample.retrieved_contexts or []),
-            "subdomain": record["subdomain"],
-            "question_class": record["question_class"],
-            **metric_scores,
-            "metric_errors": {
-                k: v for k, v in metric_errors.items() if v is not None
-            },
-        })
-    
+
+        results.append(
+            {
+                "user_input": sample.user_input,
+                "response": sample.response,
+                "reference": sample.reference,
+                "retrieved_contexts": sample.retrieved_contexts or [],
+                "retrieved_context": "\n\n---\n\n".join(
+                    sample.retrieved_contexts or []
+                ),
+                "subdomain": record["subdomain"],
+                "question_class": record["question_class"],
+                **metric_scores,
+                "metric_errors": {
+                    k: v for k, v in metric_errors.items() if v is not None
+                },
+            }
+        )
+
     return results
 
+
 # Run async evaluation
+eval_phase_start = time.perf_counter()
 results = asyncio.run(evaluate_samples())
+eval_phase_runtime_s = time.perf_counter() - eval_phase_start
+total_runtime_s = time.perf_counter() - total_start
 score_df = pd.DataFrame(results)
 score_cols = enabled_metric_names
 for col in score_cols:
@@ -281,21 +424,37 @@ for k, v in mean_scores.items():
     else:
         print(f"  {k}: {v:.4f}")
 
-with mlflow.start_run():
-    for metric_name, metric_value in mean_scores.items():
-        mlflow.log_metric(metric_name, metric_value)
-    mlflow.log_table(data=score_df, artifact_file="ragas_scores.json")
-    mlflow.log_params({
-        "llm_provider": LLM_PROVIDER,
-        "llm_model": LLM_MODEL,
-        "embedding_provider": EMBEDDING_PROVIDER,
-        "embedding_model": EMBEDDING_MODEL,
-        "judge_provider": JUDGE_PROVIDER,
-        "judge_model": JUDGE_LLM_MODEL,
-        "judge_embedding_provider": JUDGE_EMBEDDING_PROVIDER,
-        "ragas_version": "0.4.3",
-        "num_samples": len(sample_records),
-        "ragas_metrics": ",".join(enabled_metric_names),
-        "langchain_graph_type": RAG_GRAPH_IMPLEMENTATION
-    })
-    print("\nMetrics logged to MLflow ✓")
+print("\n=== Runtime ===")
+print(f"  RAG phase:        {rag_phase_runtime_s:.2f}s")
+print(f"  Evaluation phase: {eval_phase_runtime_s:.2f}s")
+print(f"  Total:            {total_runtime_s:.2f}s")
+
+# MLflow run was started at the top of the script so its built-in Duration
+# column covers everything above. Log metrics/params/artifacts into it now.
+for metric_name, metric_value in mean_scores.items():
+    mlflow.log_metric(metric_name, metric_value)
+mlflow.log_metric("rag_phase_runtime_s", rag_phase_runtime_s)
+mlflow.log_metric("eval_phase_runtime_s", eval_phase_runtime_s)
+mlflow.log_table(data=score_df, artifact_file="ragas_scores.json")
+params = {
+    "llm_provider": producer_llm_provider,
+    "llm_model": producer_llm_model,
+    "embedding_provider": producer_embed_provider,
+    "embedding_model": producer_embed_model,
+    "judge_provider": JUDGE_PROVIDER,
+    "judge_model": JUDGE_LLM_MODEL,
+    "judge_embedding_provider": JUDGE_EMBEDDING_PROVIDER,
+    "ragas_version": "0.4.3",
+    "num_samples": len(sample_records),
+    "ragas_metrics": ",".join(enabled_metric_names),
+    "langchain_graph_type": producer_graph_type,
+    "use_precomputed_answers": USE_PRECOMPUTED_ANSWERS,
+}
+# Surface any extra keys from the dataset config (e.g. retrieval_profile,
+# generated_at) so they show up in the MLflow run alongside the core ones.
+if USE_PRECOMPUTED_ANSWERS:
+    for key, value in dataset_config.items():
+        params.setdefault(key, value)
+mlflow.log_params(params)
+mlflow.end_run()
+print("\nMetrics logged to MLflow ✓")

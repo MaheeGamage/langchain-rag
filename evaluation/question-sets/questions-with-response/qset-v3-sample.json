@@ -1,0 +1,103 @@
+{
+    "config": {
+        "llm_provider": "openai",
+        "llm_model": "gpt-4o-mini",
+        "embedding_provider": "openai",
+        "embedding_model": "text-embedding-3-small",
+        "langchain_graph_type": "rag_agent",
+        "retrieval_profile": "cross_encoder_v2",
+        "generated_at": "2026-04-24T10:00:00Z",
+        "source_mlflow_run_id": "REPLACE_WITH_ACTUAL_RUN_ID",
+        "source_experiment_name": "qset-v3-rag-agent",
+        "git_sha": "07dd5ce",
+        "notes": "Sample file illustrating the {config, questions} shape with precomputed answers."
+    },
+    "questions": [
+        {
+            "inputs": {
+                "question": "How many qubits are typically found in a NISQ-era quantum computer?"
+            },
+            "expectations": {
+                "expected_response": "Quantum computers in the NISQ era typically contain between 50 and a few hundred qubits"
+            },
+            "precomputed": {
+                "response": "NISQ-era quantum computers typically contain between 50 and a few hundred qubits. Current devices from vendors like IBM, Google, and IonQ fall within this range, with the upper bound extending toward about 1000 qubits on the most recent hardware.",
+                "retrieved_contexts": [
+                    "The NISQ (Noisy Intermediate-Scale Quantum) era is characterized by quantum processors containing roughly 50 to a few hundred qubits. These devices lack full error correction and therefore the useful circuit depth is constrained by decoherence and gate error rates.",
+                    "Representative NISQ hardware includes IBM's Eagle (127 qubits) and Osprey (433 qubits) processors, Google's Sycamore (53 qubits), and IonQ trapped-ion systems in the 20-40 qubit range. None of these support fault-tolerant computation yet."
+                ]
+            },
+            "subdomain": "nisq_constraints_and_qsd_constraints",
+            "q_class": "fact_single"
+        },
+        {
+            "inputs": {
+                "question": "What are the primary challenges quantum researchers face when dealing with hardware in the current NISQ era?"
+            },
+            "expectations": {
+                "expected_response": "Researchers must manage a limited number of qubits that are highly prone to noise and computational errors. Hardware characteristics such as decoherence times and gate fidelities are unstable and change significantly between recalibrations. Restricted connectivity between qubits further complicates the development process by necessitating the insertion of additional gates during the compilation stage"
+            },
+            "precomputed": {
+                "response": "The main challenges are (1) a limited qubit count combined with high noise and error rates, (2) unstable hardware characteristics such as decoherence times (T1, T2) and gate fidelities that drift between recalibrations, and (3) restricted qubit connectivity, which forces the compiler to insert additional SWAP gates and increases effective circuit depth.",
+                "retrieved_contexts": [
+                    "In the NISQ era, researchers work with a small number of qubits that are highly susceptible to noise and computational errors. Coherence times and gate fidelities vary significantly between calibration cycles, which makes results hard to reproduce.",
+                    "Limited qubit connectivity on superconducting hardware means that two-qubit gates can only be applied between physically adjacent qubits. The compiler resolves this by inserting SWAP gates, which increases gate count and deepens the circuit, further exposing it to decoherence.",
+                    "Because gate errors compound multiplicatively along a circuit, even a modestly deep circuit can have its output overwhelmed by noise before the ideal final state is reached."
+                ]
+            },
+            "subdomain": "nisq_constraints_and_qsd_constraints",
+            "q_class": "summary"
+        },
+        {
+            "inputs": {
+                "question": "Why does the accuracy of my results typically drop as I increase the depth of my quantum circuit?"
+            },
+            "expectations": {
+                "expected_response": "Increasing circuit depth leads to lower accuracy because the total execution time is more likely to exceed the qubits' decoherence window and the accumulation of individual gate errors overwhelms the final signal"
+            },
+            "precomputed": {
+                "response": "Deeper circuits take longer to execute and apply more gates, so (a) the total runtime approaches or exceeds the qubits' decoherence times (T1/T2), causing the quantum state to decay, and (b) per-gate errors accumulate multiplicatively along the circuit, eventually drowning out the ideal signal. Both effects compound as depth grows.",
+                "retrieved_contexts": [
+                    "As the depth of a quantum circuit grows, the execution time grows with it. Once the execution time approaches the coherence window set by T1 and T2, the qubits decohere and the final state no longer reflects the intended computation.",
+                    "Individual gate errors are small but compound multiplicatively across a circuit. A circuit of depth D built from gates with fidelity f has an upper-bound success probability of roughly f^D, which drops quickly for realistic NISQ fidelities around 0.99."
+                ]
+            },
+            "subdomain": "nisq_constraints_and_qsd_constraints",
+            "q_class": "reasoning"
+        },
+        {
+            "inputs": {
+                "question": "What is the specific hourly cost for accessing the IQM 50-qubit processor through the VTT QX service?"
+            },
+            "expectations": {
+                "expected_response": "I don't have enough information to answer this question."
+            },
+            "precomputed": {
+                "response": "I don't have enough information to answer this question.",
+                "retrieved_contexts": [
+                    "VTT and IQM jointly operate the Finnish quantum computing infrastructure, including a 50-qubit superconducting processor accessible through the VTT QX service for research partners.",
+                    "Access arrangements for the VTT QX service are negotiated per project and are not published as a fixed hourly rate in the available documentation."
+                ]
+            },
+            "subdomain": "nisq_constraints_and_qsd_constraints",
+            "q_class": "unanswerable"
+        },
+        {
+            "inputs": {
+                "question": "What is the fundamental unit of organization for tracking executions in MLflow?"
+            },
+            "expectations": {
+                "expected_response": "MLflow Tracking is organized around the concept of runs, which represent individual executions of data science code."
+            },
+            "precomputed": {
+                "response": "MLflow Tracking is organized around runs. A run represents a single execution of data science code and is the unit under which parameters, metrics, artifacts, and source code versions are recorded.",
+                "retrieved_contexts": [
+                    "MLflow Tracking centers on the concept of a run: a single execution of data science or ML code. Each run captures its parameters, metrics, tags, and any artifacts produced during execution.",
+                    "Runs are grouped into experiments, which provide a logical namespace for related runs (for example, all runs evaluating a particular RAG configuration)."
+                ]
+            },
+            "subdomain": "experiment_tracking_fundamentals",
+            "q_class": "fact_single"
+        }
+    ]
+}
