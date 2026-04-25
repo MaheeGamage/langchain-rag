@@ -56,3 +56,7 @@ knowledge_ingestion/content/refined-content
 evaluation/ragas/eval/
 evaluation/ragas/experiments/
 mlruns/
+
+# ignore experimentation/thesis/figures and experimentation/thesis/latex_tables directories
+experimentation/thesis/figures/
+experimentation/thesis/latex_tables/
