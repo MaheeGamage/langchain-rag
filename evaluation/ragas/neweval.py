@@ -55,7 +55,7 @@ EVAL_DATASET_PATH = (
     else os.path.abspath(os.path.join(_EVAL_ROOT, EVAL_DATASET_PATH))
 )
 
-MAX_Q_RAW = 1
+MAX_Q_RAW = None
 Q_INDICES_RAW = None  # e.g. "0,3,7"
 FILTER_SUBDOMAIN = None  # "qprov_provenance_taxonomy"
 FILTER_Q_CLASS = None
@@ -67,12 +67,12 @@ FILTER_Q_CLASS = None
 USE_PRECOMPUTED_ANSWERS = False
 
 ENABLED_RAGAS_METRICS = [
-    # "faithfulness",
-    # "context_precision",
-    # "context_recall",
-    # "answer_relevance",
-    # "factual_correctness",
-    # "factual_correctness_recall",
+    "faithfulness",
+    "context_precision",
+    "context_recall",
+    "answer_relevance",
+    "factual_correctness",
+    "factual_correctness_recall",
 ]
 
 
