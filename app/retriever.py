@@ -286,6 +286,13 @@ PROFILES: dict[str, "HybridConfig"] = {
         bm25_weight=0.0,
         final_k=6,
     ),
+    "bm25": HybridConfig(
+        semantic=SemanticConfig(k=0, score_threshold=None),
+        bm25=BM25Config(k=6, preprocess_func=api_aware_tokenize),
+        semantic_weight=0.0,
+        bm25_weight=1.0,
+        final_k=6,
+    ),
 }
 
 # Profiles whose HybridConfig depends on a heavy dependency (e.g. the
