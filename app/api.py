@@ -3,10 +3,10 @@
 from app.schemas import QueryRequest, QueryResponse, SourceChunk
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage
 import uuid
 import json
-from .graph import ACTIVE_GRAPH_IMPLEMENTATION, graph, stream_query
+from .graph import ACTIVE_GRAPH_IMPLEMENTATION, graph, invoke_query, stream_query
 from .models import ContextEntry
 from .config import (
     CHROMA_TARGET,
@@ -117,21 +117,13 @@ async def query(req: QueryRequest):
     thread_id = req.conversation.id if req.conversation and req.conversation.id else str(uuid.uuid4())
 
     messages = [HumanMessage(content=req.message)]
-    config = {"configurable": {"thread_id": thread_id}}
-
     context_entries = req.context.entries if req.context else []
 
-    result = graph.invoke(
-        {"messages": messages, "context": context_entries, "retrieved": []},
-        config=config,
+    retrieved, answer = invoke_query(
+        messages=messages,
+        context_entries=context_entries,
+        thread_id=thread_id,
     )
-
-    # Extract the answer from the last AIMessage in the returned messages
-    answer = ""
-    for m in reversed(result["messages"]):
-        if isinstance(m, AIMessage):
-            answer = m.content
-            break
 
     sources = [
         SourceChunk(
@@ -141,7 +133,7 @@ async def query(req: QueryRequest):
                 **({"score": entry.score} if entry.score is not None else {}),
             },
         )
-        for entry in result.get("retrieved", [])
+        for entry in retrieved
     ]
     return QueryResponse(thread_id=thread_id, answer=answer, sources=sources)
 
