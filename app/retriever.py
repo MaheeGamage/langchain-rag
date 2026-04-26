@@ -185,15 +185,20 @@ def build_hybrid_retriever(config: HybridConfig = HybridConfig()) -> BaseRetriev
     Pipeline: semantic(k) + bm25(k) → RRF fusion (weighted) →
     [optional reranker] → [optional final_k cap].
 
+    Retrievers with weight <= 0 are skipped entirely (no index build).
     With the default ``HybridConfig()`` the behaviour is identical to the
     previous call-site pattern of ``get_hybrid_retriever([(sem, 0.5), (bm25, 0.5)])``.
     """
-    semantic = get_semantic_retriever(config.semantic)
-    bm25 = get_bm25_retriever(config.bm25)
-    base = get_hybrid_retriever(
-        [(semantic, config.semantic_weight), (bm25, config.bm25_weight)],
-        rrf_c=config.rrf_c,
-    )
+    retrievers_with_weights: list[tuple[BaseRetriever, float]] = []
+    if config.semantic_weight > 0:
+        retrievers_with_weights.append(
+            (get_semantic_retriever(config.semantic), config.semantic_weight)
+        )
+    if config.bm25_weight > 0:
+        retrievers_with_weights.append(
+            (get_bm25_retriever(config.bm25), config.bm25_weight)
+        )
+    base = get_hybrid_retriever(retrievers_with_weights, rrf_c=config.rrf_c)
     if config.reranker is None and config.final_k is None:
         return base
     return _PostProcessingRetriever(
@@ -248,6 +253,7 @@ PROFILES: dict[str, "HybridConfig"] = {
         bm25=BM25Config(k=4, preprocess_func=api_aware_tokenize),
         semantic_weight=0.5,
         bm25_weight=0.5,
+        final_k=6,
     ),
     "acronym": HybridConfig(
         semantic=SemanticConfig(k=6, score_threshold=None),
@@ -272,6 +278,20 @@ PROFILES: dict[str, "HybridConfig"] = {
         bm25=BM25Config(k=8, preprocess_func=api_aware_tokenize),
         semantic_weight=0.5,
         bm25_weight=0.5,
+    ),
+    "semantic": HybridConfig(
+        semantic=SemanticConfig(k=6, score_threshold=None),
+        bm25=BM25Config(k=0),
+        semantic_weight=1.0,
+        bm25_weight=0.0,
+        final_k=6,
+    ),
+    "bm25": HybridConfig(
+        semantic=SemanticConfig(k=0, score_threshold=None),
+        bm25=BM25Config(k=6, preprocess_func=api_aware_tokenize),
+        semantic_weight=0.0,
+        bm25_weight=1.0,
+        final_k=6,
     ),
 }
 
@@ -301,6 +321,7 @@ PROFILE_DESCRIPTIONS: dict[str, str] = {
     "overview":   "Balanced, k=10. For summary/listing/taxonomy questions needing broad context.",
     "reasoning":  "Balanced, k=8. For multi-hop reasoning needing several supporting facts.",
     "reranked":   "Wide retrieve (k=10 each) + cross-encoder rerank, trimmed to 4. Higher latency; best precision.",
+    "semantic":   "Semantic-only (k=6, no BM25). For queries where keyword matching adds noise.",
 }
 
 # All valid profile names — union of eager configs and lazy factories.  Callers

@@ -37,6 +37,9 @@ EMBEDDING_PROVIDER: str = os.getenv("EMBEDDING_PROVIDER", "ollama")
 JUDGE_PROVIDER:     str = os.getenv("JUDGE_PROVIDER",     "ollama")
 # Graph switch (single source of truth for which graph implementation is exported)
 RAG_GRAPH_IMPLEMENTATION: str = os.getenv("RAG_GRAPH_IMPLEMENTATION", "baseline").strip().lower()
+# When set, forces every graph to use this retriever profile, overriding any
+# model-chosen or hardcoded profile.  Useful for fixating retrieval during eval.
+RETRIEVER_PROFILE_OVERRIDE: str | None = os.getenv("RETRIEVER_PROFILE_OVERRIDE", "").strip() or None
 # Default to LLM_PROVIDER if not explicitly set (backward compatibility)
 HELPER_LLM_PROVIDER: str = os.getenv("HELPER_LLM_PROVIDER", LLM_PROVIDER)
 # Default to JUDGE_PROVIDER if not explicitly set (backward compatibility)

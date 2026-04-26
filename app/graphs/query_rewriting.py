@@ -10,7 +10,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langgraph.graph import END, StateGraph
 from mlflow.entities import SpanType
 
-from app.config import HELPER_LLM_MODEL, HELPER_LLM_PROVIDER, LLM_MODEL, LLM_PROVIDER
+from app.config import HELPER_LLM_MODEL, HELPER_LLM_PROVIDER, LLM_MODEL, LLM_PROVIDER, RETRIEVER_PROFILE_OVERRIDE
 from app.factory import get_helper_llm, get_llm
 from app.graphs.common import (
     build_messages,
@@ -75,13 +75,18 @@ def _parse_rewrite(raw: str, fallback_query: str) -> tuple[str, str]:
         log.warning("Helper LLM picked unknown profile %r; using 'default'", profile)
         profile = "default"
 
+    if RETRIEVER_PROFILE_OVERRIDE:
+        log.info("Retriever profile overridden: %s -> %s", profile, RETRIEVER_PROFILE_OVERRIDE)
+        profile = RETRIEVER_PROFILE_OVERRIDE
+
     return query, profile
 
 
-def rewrite_query(state: QueryRewritingState):
+def rewrite_query(state: QueryRewritingState, run_config: dict | None = None):
     question = latest_user_query(state["messages"])
     t = time.perf_counter()
-    raw = helper_llm.invoke(REWRITE_PROMPT.substitute(question=question))
+    invoke_kwargs = {"config": run_config} if run_config else {}
+    raw = helper_llm.invoke(REWRITE_PROMPT.substitute(question=question), **invoke_kwargs)
     query, profile = _parse_rewrite(raw, fallback_query=question)
     log.info(
         "Rewrote in %.2fs: %r -> query=%r profile=%s",
@@ -158,10 +163,15 @@ def stream_answer(
         "retrieved": [],
     }
 
-    rewrite_result = rewrite_query(state)
+    _cbs = (config or {}).get("callbacks", [])
+    _invoke_cfg = {"callbacks": _cbs} if _cbs else None
+
+    rewrite_result = rewrite_query(state, run_config=_invoke_cfg)
     state.update(rewrite_result)
 
-    if not profile_selection:
+    if RETRIEVER_PROFILE_OVERRIDE:
+        state["retrieval_profile"] = RETRIEVER_PROFILE_OVERRIDE
+    elif not profile_selection:
         state["retrieval_profile"] = "default"
 
     retrieval_result = retrieve(state)
@@ -174,7 +184,7 @@ def stream_answer(
         llm_model=LLM_MODEL,
     )
 
-    answer = invoke_llm_with_retry(get_llm(), prompt_messages, log)
+    answer = invoke_llm_with_retry(get_llm(), prompt_messages, log, run_config=_invoke_cfg)
     chunks = chunk_text_for_streaming(answer if isinstance(answer, str) else answer.content)
 
     def _token_iterator() -> Iterator[str]:

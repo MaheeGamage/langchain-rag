@@ -38,12 +38,12 @@ def invoke_retriever_with_retry(retriever, query: str, log: logging.Logger, max_
     raise RuntimeError(f"Retriever invoke failed after {max_attempts} attempts: {last_exc}") from last_exc
 
 
-def invoke_llm_with_retry(llm, prompt, log: logging.Logger, max_attempts: int = 3):
+def invoke_llm_with_retry(llm, prompt, log: logging.Logger, max_attempts: int = 3, run_config: dict | None = None):
     """Retry LLM calls for transient transport failures (e.g. connection reset)."""
     last_exc: Exception | None = None
     for attempt in range(1, max_attempts + 1):
         try:
-            return llm.invoke(prompt)
+            return llm.invoke(prompt) if run_config is None else llm.invoke(prompt, config=run_config)
         except Exception as exc:
             last_exc = exc
             if attempt == max_attempts:
