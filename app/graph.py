@@ -61,6 +61,23 @@ graph = _build_graph(checkpointer=_checkpointer)
 log.info("Active RAG graph implementation: %s", ACTIVE_GRAPH_IMPLEMENTATION)
 
 
+def invoke_query(
+    *,
+    messages: list[BaseMessage],
+    context_entries: list[ContextEntry],
+    thread_id: str,
+) -> tuple[list[ContextEntry], str]:
+    config = {"configurable": {"thread_id": thread_id}}
+    retrieved, token_iterator = _stream_answer(
+        messages=messages,
+        context_entries=context_entries,
+        graph_instance=graph,
+        config=config,
+    )
+    answer = "".join(token_iterator)
+    return retrieved, answer
+
+
 def stream_query(
     *,
     messages: list[BaseMessage],
